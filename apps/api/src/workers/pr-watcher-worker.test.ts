@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { determineCheckStatus, determineReviewStatus } from "./pr-watcher-worker.js";
+import {
+  determineCheckStatus,
+  determineReviewStatus,
+  isPrWorthWatching,
+} from "./pr-watcher-worker.js";
 
 describe("determineCheckStatus", () => {
   it("returns none for empty check runs", () => {
@@ -75,5 +79,27 @@ describe("determineReviewStatus", () => {
         { state: "APPROVED", body: "Fixed" },
       ]),
     ).toEqual({ status: "approved", comments: "" });
+  });
+});
+
+describe("isPrWorthWatching", () => {
+  it("keeps watching an open PR, whatever the task state", () => {
+    expect(isPrWorthWatching({ state: "pr_opened", prState: "open" })).toBe(true);
+    expect(isPrWorthWatching({ state: "failed", prState: "open" })).toBe(true);
+  });
+
+  it("keeps watching a PR whose state was never read", () => {
+    expect(isPrWorthWatching({ state: "pr_opened", prState: null })).toBe(true);
+    expect(isPrWorthWatching({ state: "failed", prState: null })).toBe(true);
+  });
+
+  it("watches a pr_opened task once more after its PR settles, so the task can transition", () => {
+    expect(isPrWorthWatching({ state: "pr_opened", prState: "closed" })).toBe(true);
+    expect(isPrWorthWatching({ state: "pr_opened", prState: "merged" })).toBe(true);
+  });
+
+  it("stops watching a failed task whose PR is closed or merged", () => {
+    expect(isPrWorthWatching({ state: "failed", prState: "closed" })).toBe(false);
+    expect(isPrWorthWatching({ state: "failed", prState: "merged" })).toBe(false);
   });
 });

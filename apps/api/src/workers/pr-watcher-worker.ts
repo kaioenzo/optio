@@ -20,6 +20,13 @@ import { underPollerLease } from "../services/poller-lease.js";
 
 const bullmqOpts = getBullMQOptions();
 
+const SETTLED_PR_STATES = new Set(["closed", "merged"]);
+
+export function isPrWorthWatching(task: { state: string; prState: string | null }): boolean {
+  const prIsSettled = task.prState !== null && SETTLED_PR_STATES.has(task.prState);
+  return !(task.state === "failed" && prIsSettled);
+}
+
 /** Determine overall CI check status from GitHub check runs. */
 export function determineCheckStatus(
   checkRuns: { status: string; conclusion: string | null }[],
@@ -136,7 +143,7 @@ async function pollPrs(): Promise<void> {
       sql`${tasks.state} IN ('pr_opened', 'failed') AND ${tasks.prUrl} IS NOT NULL AND (${tasks.taskType} = 'coding' OR ${tasks.taskType} IS NULL)`,
     );
 
-  for (const task of openPrTasks) {
+  for (const task of openPrTasks.filter(isPrWorthWatching)) {
     if (!task.prUrl) continue;
 
     try {
