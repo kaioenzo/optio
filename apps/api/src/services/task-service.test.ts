@@ -78,6 +78,7 @@ import {
   updateTaskActivity,
   getStallThresholdForRepo,
   getTaskByPrUrl,
+  closesLinkedIssue,
 } from "./task-service.js";
 
 describe("StateRaceError", () => {
@@ -414,6 +415,43 @@ describe("getStallThresholdForRepo", () => {
     delete process.env.OPTIO_STALL_THRESHOLD_MS;
     expect(getStallThresholdForRepo(null)).toBe(300000);
     expect(getStallThresholdForRepo({ stallThresholdMs: null })).toBe(300000);
+  });
+});
+
+describe("closesLinkedIssue", () => {
+  const originalEnv = process.env.OPTIO_CLOSE_ISSUE_ON_COMPLETE;
+  const gitlabIssue = { ticketSource: "gitlab", ticketExternalId: "677" };
+
+  afterEach(() => {
+    if (originalEnv !== undefined) {
+      process.env.OPTIO_CLOSE_ISSUE_ON_COMPLETE = originalEnv;
+    } else {
+      delete process.env.OPTIO_CLOSE_ISSUE_ON_COMPLETE;
+    }
+  });
+
+  it("closes a GitHub or GitLab issue when its task completes", () => {
+    delete process.env.OPTIO_CLOSE_ISSUE_ON_COMPLETE;
+    expect(closesLinkedIssue(gitlabIssue, TaskState.COMPLETED)).toBe(true);
+    expect(
+      closesLinkedIssue({ ticketSource: "github", ticketExternalId: "12" }, TaskState.COMPLETED),
+    ).toBe(true);
+  });
+
+  it("leaves the issue alone for any other transition, source or unlinked task", () => {
+    delete process.env.OPTIO_CLOSE_ISSUE_ON_COMPLETE;
+    expect(closesLinkedIssue(gitlabIssue, TaskState.FAILED)).toBe(false);
+    expect(
+      closesLinkedIssue({ ticketSource: "linear", ticketExternalId: "ABC-1" }, TaskState.COMPLETED),
+    ).toBe(false);
+    expect(
+      closesLinkedIssue({ ticketSource: "gitlab", ticketExternalId: null }, TaskState.COMPLETED),
+    ).toBe(false);
+  });
+
+  it("leaves the issue open when OPTIO_CLOSE_ISSUE_ON_COMPLETE is false", () => {
+    process.env.OPTIO_CLOSE_ISSUE_ON_COMPLETE = "false";
+    expect(closesLinkedIssue(gitlabIssue, TaskState.COMPLETED)).toBe(false);
   });
 });
 

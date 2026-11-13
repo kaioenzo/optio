@@ -557,12 +557,7 @@ async function announceTransition(written: WrittenTransition) {
     errorMessage: updatedTask.errorMessage ?? undefined,
   });
 
-  // Close linked issue when task completes (GitHub or GitLab)
-  if (
-    toState === TaskState.COMPLETED &&
-    (task.ticketSource === "github" || task.ticketSource === "gitlab") &&
-    task.ticketExternalId
-  ) {
+  if (closesLinkedIssue(task, toState) && task.ticketExternalId) {
     closeIssue(task.repoUrl, task.ticketExternalId, task.prUrl).catch((err) =>
       logger.warn({ err, taskId: id }, "Failed to close linked issue"),
     );
@@ -673,6 +668,15 @@ async function announceTransition(written: WrittenTransition) {
       enqueueReconcile({ kind: "repo", id }, { reason: `transition:${currentState}->${toState}` }),
     )
     .catch((err) => logger.warn({ err, taskId: id }, "Failed to enqueue reconcile"));
+}
+
+export function closesLinkedIssue(
+  task: { ticketSource: string | null; ticketExternalId: string | null },
+  toState: TaskState,
+): boolean {
+  if (process.env.OPTIO_CLOSE_ISSUE_ON_COMPLETE === "false") return false;
+  const isRepoIssue = task.ticketSource === "github" || task.ticketSource === "gitlab";
+  return toState === TaskState.COMPLETED && isRepoIssue && !!task.ticketExternalId;
 }
 
 async function closeIssue(repoUrl: string, issueNumber: string, prUrl?: string | null) {
