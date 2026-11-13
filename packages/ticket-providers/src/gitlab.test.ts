@@ -242,3 +242,38 @@ describe("GitLabTicketProvider groups and self-managed hosts", () => {
     ).rejects.toThrow(/projectPath or groupPath/);
   });
 });
+
+describe("GitLabTicketProvider refused issue listing", () => {
+  it.each([401, 403, 429, 500])(
+    "rejects with status %i instead of reporting no tickets",
+    async (status) => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(new Response("refused", { status }));
+
+      const listing = new GitLabTicketProvider().fetchActionableTickets(baseConfig());
+
+      await expect(listing).rejects.toMatchObject({
+        status,
+        message: `GitLab API error ${status} while listing issues`,
+      });
+      fetchSpy.mockRestore();
+    },
+  );
+
+  it("rejects when a later page is refused, rather than returning a partial list", async () => {
+    const firstPage = new Response(JSON.stringify([{ iid: 1, title: "one", labels: ["optio"] }]), {
+      status: 200,
+      headers: { "x-total-pages": "2" },
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce(new Response("slow down", { status: 429 }));
+
+    const listing = new GitLabTicketProvider().fetchActionableTickets(baseConfig());
+
+    await expect(listing).rejects.toMatchObject({ status: 429 });
+    fetchSpy.mockRestore();
+  });
+});

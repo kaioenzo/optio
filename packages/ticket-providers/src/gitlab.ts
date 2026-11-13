@@ -35,6 +35,12 @@ function asGitLabConfig(config: TicketProviderConfig): GitLabProviderConfig {
   return c;
 }
 
+function refusedByGitLab(res: Response, action: string): Error & { status: number } {
+  return Object.assign(new Error(`GitLab API error ${res.status} while ${action}`), {
+    status: res.status,
+  });
+}
+
 /** The host as `host[:port][/prefix]`, whatever scheme or trailing slash it was given with. */
 function gitLabHost(config: GitLabProviderConfig): string {
   return (
@@ -102,7 +108,7 @@ export class GitLabTicketProvider implements TicketProvider {
 
       const fetchUrl = `${baseUrl}/${listPath}/issues?${params}`;
       const res = await guardedFetch(fetchUrl, { headers: hdrs, redirect: "error" });
-      if (!res.ok) break;
+      if (!res.ok) throw refusedByGitLab(res, "listing issues");
 
       const issues = (await res.json()) as any[];
       if (issues.length === 0) break;
