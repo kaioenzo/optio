@@ -76,10 +76,9 @@ describe("OpenCodeAdapter", () => {
       expect(config.env.OPTIO_REPO_BRANCH).toBe("main");
     });
 
-    it("requires provider API key secrets", () => {
+    it("leaves the any-one provider key to the workers instead of requiring every key", () => {
       const config = adapter.buildContainerConfig(baseInput);
-      expect(config.requiredSecrets).toContain("ANTHROPIC_API_KEY");
-      expect(config.requiredSecrets).toContain("OPENAI_API_KEY");
+      expect(config.requiredSecrets).toEqual([]);
     });
 
     it("sets OPTIO_OPENCODE_MODEL when opencodeModel is provided", () => {

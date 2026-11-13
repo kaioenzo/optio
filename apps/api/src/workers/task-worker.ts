@@ -1,6 +1,6 @@
 import { workTraceability } from "../services/work-traceability.js";
 import { piCommand } from "../utils/pi-command.js";
-import { piProviderSecrets } from "../services/pi-provider-secrets.js";
+import { opencodeProviderSecrets, piProviderSecrets } from "../services/provider-secrets.js";
 import { BUDGET_RETRY_MS, runBudgetHold } from "../services/usage-budget-service.js";
 import { workCredentialProfile } from "../services/pod-isolation.js";
 import {
@@ -510,6 +510,7 @@ export function startTaskWorker() {
           ? podProviderRuntime(providerRow, task.agentType)
           : null;
         if (providerRow) log.info({ provider: providerRow.name }, "Using model provider");
+        const opencodeBaseUrl = opt("opencodeBaseUrl") ?? opencodeDefaultBaseUrl;
 
         const agentConfig = adapter.buildContainerConfig({
           taskId: task.id,
@@ -532,7 +533,7 @@ export function startTaskWorker() {
           copilotEffort: copilotOpt("copilotEffort"),
           opencodeModel: opt("opencodeModel") ?? opencodeDefaultModel,
           opencodeAgent: opt("opencodeAgent"),
-          opencodeBaseUrl: opt("opencodeBaseUrl") ?? opencodeDefaultBaseUrl,
+          opencodeBaseUrl,
           cursorModel: opt("cursorModel"),
           piModel:
             reviewOverride?.model ??
@@ -599,6 +600,18 @@ export function startTaskWorker() {
                   .then((values) => values[name])
                   .catch(() => null),
               pickedCredential ? credentialRuntime("pi", pickedCredential) : null,
+            ),
+          );
+        }
+        if (task.agentType === "opencode") {
+          Object.assign(
+            resolvedSecrets,
+            await opencodeProviderSecrets(
+              (name) =>
+                resolveSecretsForTask([name], task.repoUrl, taskWorkspaceId, runOwnerUserId)
+                  .then((values) => values[name])
+                  .catch(() => null),
+              opencodeBaseUrl,
             ),
           );
         }

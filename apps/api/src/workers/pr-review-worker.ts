@@ -1,4 +1,4 @@
-import { piProviderSecrets } from "../services/pi-provider-secrets.js";
+import { opencodeProviderSecrets, piProviderSecrets } from "../services/provider-secrets.js";
 import { runBudgetHold } from "../services/usage-budget-service.js";
 /**
  * PR Review worker — executes pr_review_runs on repo-pod infrastructure.
@@ -356,6 +356,7 @@ export function startPrReviewWorker() {
           agentType === "gemini" ? resolvedModel : (repoConfig.geminiModel ?? undefined);
         const cursorModel =
           agentType === "cursor" ? resolvedModel : (repoConfig.cursorModel ?? undefined);
+        const opencodeBaseUrl = repoConfig.opencodeBaseUrl ?? opencodeDefaultBaseUrl;
 
         const agentConfig = adapter.buildContainerConfig({
           taskId: run.id,
@@ -377,7 +378,7 @@ export function startPrReviewWorker() {
             agentType === "codex" ? undefined : (repoConfig.copilotEffort ?? undefined),
           opencodeModel,
           opencodeAgent: repoConfig.opencodeAgent ?? undefined,
-          opencodeBaseUrl: repoConfig.opencodeBaseUrl ?? opencodeDefaultBaseUrl,
+          opencodeBaseUrl,
           cursorModel,
           piModel: agentType === "pi" ? resolvedModel : undefined,
           geminiAuthMode,
@@ -419,14 +420,16 @@ export function startPrReviewWorker() {
           workspaceId,
           userId,
         );
+        const storedSecret = (name: string) =>
+          resolveSecretsForTask([name], review.repoUrl, workspaceId, userId)
+            .then((values) => values[name])
+            .catch(() => null);
         if (agentType === "pi")
+          Object.assign(resolvedSecrets, await piProviderSecrets(storedSecret));
+        if (agentType === "opencode")
           Object.assign(
             resolvedSecrets,
-            await piProviderSecrets((name) =>
-              resolveSecretsForTask([name], review.repoUrl, workspaceId, userId)
-                .then((values) => values[name])
-                .catch(() => null),
-            ),
+            await opencodeProviderSecrets(storedSecret, opencodeBaseUrl),
           );
 
         const allEnv: Record<string, string> = { ...agentConfig.env, ...resolvedSecrets };

@@ -69,16 +69,10 @@ export class OpenCodeAdapter implements AgentAdapter {
       OPTIO_BRANCH_NAME: `${TASK_BRANCH_PREFIX}${input.taskId}`,
     };
 
-    // OpenCode reads provider-specific env vars directly (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
-    // These are injected via requiredSecrets
+    // OpenCode accepts any one provider key: workers resolve that alternative
+    // explicitly (opencodeProviderSecrets), so naming them all here would
+    // demand every key at once.
     const requiredSecrets: string[] = [];
-
-    // When using a custom base URL, provider API keys are optional — the adapter
-    // sets a placeholder OPENAI_API_KEY in env that will be overridden if a real
-    // secret exists. Without a custom base URL, require standard provider keys.
-    if (!input.opencodeBaseUrl) {
-      requiredSecrets.push(...OPENCODE_PROVIDER_KEYS);
-    }
 
     const setupFiles: AgentContainerConfig["setupFiles"] = [];
 

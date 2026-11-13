@@ -1,9 +1,5 @@
-import {
-  getAdapter,
-  OPENCODE_PLACEHOLDER_KEY,
-  OPENCODE_PROVIDER_KEYS,
-} from "@optio/agent-adapters";
-import { piProviderSecrets } from "./pi-provider-secrets.js";
+import { getAdapter, OPENCODE_PLACEHOLDER_KEY } from "@optio/agent-adapters";
+import { opencodeProviderSecrets, piProviderSecrets } from "./provider-secrets.js";
 import { agentOptionsEnv } from "./agent-options-env.js";
 import { podProviderRuntime, resolveProviderForWork } from "./model-provider-service.js";
 import {
@@ -130,25 +126,14 @@ export async function pooledProviderSecrets(
   credential: CredentialRuntime | null = null,
 ): Promise<Record<string, string>> {
   if (agent.agentRuntime === "pi") return piProviderSecrets(secret, credential);
-  if (agent.agentRuntime !== "opencode") {
-    // A picked credential supplies its own secret (and, for Codex, an
-    // app-server makes the key unnecessary): don't require what it provides.
-    const missing = adapter
-      .validateSecrets([], credential?.codexAuthMode)
-      .missing.filter((name) => !(credential && name in credential.env));
-    return resolveRequired(missing);
+  if (agent.agentRuntime === "opencode") {
+    const baseUrl = agent.agentOptions?.opencodeBaseUrl;
+    return opencodeProviderSecrets(secret, typeof baseUrl === "string" ? baseUrl : null);
   }
-  const found: Record<string, string> = {};
-  for (const name of OPENCODE_PROVIDER_KEYS) {
-    const value = await secret(name);
-    if (value) found[name] = value;
-  }
-  const baseUrl = agent.agentOptions?.opencodeBaseUrl;
-  if (Object.keys(found).length === 0 && !(typeof baseUrl === "string" && baseUrl)) {
-    const keys = [...OPENCODE_PROVIDER_KEYS];
-    throw new Error(
-      `OpenCode needs one of ${keys.slice(0, -1).join(", ")} or ${keys[keys.length - 1]} as a secret, or a custom base URL (opencodeBaseUrl)`,
-    );
-  }
-  return found;
+  // A picked credential supplies its own secret (and, for Codex, an
+  // app-server makes the key unnecessary): don't require what it provides.
+  const missing = adapter
+    .validateSecrets([], credential?.codexAuthMode)
+    .missing.filter((name) => !(credential && name in credential.env));
+  return resolveRequired(missing);
 }
