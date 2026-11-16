@@ -367,6 +367,14 @@ export class CodeCommitPlatform implements GitPlatform {
     throw new Error("CodeCommit does not support issue labels");
   }
 
+  async removeLabelFromIssue(
+    _ri: RepoIdentifier,
+    _issueNumber: number,
+    _label: string,
+  ): Promise<void> {
+    throw new Error("CodeCommit does not support issue labels");
+  }
+
   async createIssueComment(
     _ri: RepoIdentifier,
     _issueNumber: number,

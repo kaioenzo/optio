@@ -402,6 +402,22 @@ export class GitHubPlatform implements GitPlatform {
     });
   }
 
+  async removeLabelFromIssue(
+    ri: RepoIdentifier,
+    issueNumber: number,
+    label: string,
+  ): Promise<void> {
+    // 404: the issue no longer carries the label
+    const res = await fetch(
+      this.url(ri, `/issues/${issueNumber}/labels/${encodeURIComponent(label)}`),
+      { method: "DELETE", headers: this.headers() },
+    );
+    if (!res.ok && res.status !== 404) {
+      const body = await res.text().catch(() => "");
+      throw GitHubApiError.fromResponse(res, body);
+    }
+  }
+
   async createIssueComment(ri: RepoIdentifier, issueNumber: number, body: string): Promise<void> {
     await this.fetchJson(this.url(ri, `/issues/${issueNumber}/comments`), {
       method: "POST",

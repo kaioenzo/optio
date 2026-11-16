@@ -79,6 +79,7 @@ import {
   getStallThresholdForRepo,
   getTaskByPrUrl,
   closesLinkedIssue,
+  releasesLinkedIssue,
 } from "./task-service.js";
 
 describe("StateRaceError", () => {
@@ -415,6 +416,29 @@ describe("getStallThresholdForRepo", () => {
     delete process.env.OPTIO_STALL_THRESHOLD_MS;
     expect(getStallThresholdForRepo(null)).toBe(300000);
     expect(getStallThresholdForRepo({ stallThresholdMs: null })).toBe(300000);
+  });
+});
+
+describe("releasesLinkedIssue", () => {
+  it("gives a GitHub or GitLab issue back when its task is cancelled", () => {
+    expect(
+      releasesLinkedIssue({ ticketSource: "gitlab", ticketExternalId: "672" }, TaskState.CANCELLED),
+    ).toBe(true);
+    expect(
+      releasesLinkedIssue({ ticketSource: "github", ticketExternalId: "12" }, TaskState.CANCELLED),
+    ).toBe(true);
+  });
+
+  it("leaves the issue alone for any other transition, source or unlinked task", () => {
+    const gitlabIssue = { ticketSource: "gitlab", ticketExternalId: "672" };
+    expect(releasesLinkedIssue(gitlabIssue, TaskState.COMPLETED)).toBe(false);
+    expect(releasesLinkedIssue(gitlabIssue, TaskState.FAILED)).toBe(false);
+    expect(
+      releasesLinkedIssue({ ticketSource: "linear", ticketExternalId: "A-1" }, TaskState.CANCELLED),
+    ).toBe(false);
+    expect(
+      releasesLinkedIssue({ ticketSource: "gitlab", ticketExternalId: null }, TaskState.CANCELLED),
+    ).toBe(false);
   });
 });
 

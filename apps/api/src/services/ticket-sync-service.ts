@@ -24,8 +24,9 @@ const ABANDONED_CLAIM = "10 minutes";
  * caller holds the claim and may create the task. A claim whose task never
  * got created (`task_id` null) is released by `releaseTicketClaim`, so it
  * does not block the ticket forever; one whose sweep died before that is
- * taken over after ten minutes, and one whose task was deleted is taken
- * over at once (a deleted task is re-created, as before claims existed).
+ * taken over after ten minutes, and one whose task was deleted or cancelled
+ * is taken over at once (cancelling took the trigger label off the issue, so
+ * an issue still listed was labelled again on purpose).
  * The takeover is the same one statement, so two racing sweeps still get
  * one claim.
  */
@@ -42,7 +43,8 @@ export async function claimTicketForSync(
       WHERE ("ticket_sync_claims"."task_id" IS NULL
              AND "ticket_sync_claims"."created_at" < now() - ${ABANDONED_CLAIM}::interval)
          OR ("ticket_sync_claims"."task_id" IS NOT NULL
-             AND NOT EXISTS (SELECT 1 FROM "tasks" t WHERE t."id" = "ticket_sync_claims"."task_id"))
+             AND NOT EXISTS (SELECT 1 FROM "tasks" t WHERE t."id" = "ticket_sync_claims"."task_id"
+                             AND t."state" <> 'cancelled'))
     RETURNING "ticket_external_id"`);
   return rows.length > 0;
 }
@@ -200,6 +202,7 @@ export async function syncAllTickets(): Promise<number> {
         const normalizedRepoUrl = normalizeRepoUrl(repoUrl);
         const alreadyExists = existingTasks.some(
           (t: any) =>
+            t.state !== "cancelled" &&
             t.ticketSource === ticket.source &&
             t.ticketExternalId === ticket.externalId &&
             normalizeRepoUrl(t.repoUrl) === normalizedRepoUrl,

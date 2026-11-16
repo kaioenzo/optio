@@ -1,7 +1,15 @@
 import { eq, desc, and, or, ilike, gte, lte, isNull, sql } from "drizzle-orm";
 import { ensurePrimaryPrRow, prNumberFromUrl } from "./task-pr-service.js";
 import { db } from "../db/client.js";
-import { tasks, taskEvents, taskLogs, users, repos, workRuns } from "../db/schema.js";
+import {
+  tasks,
+  taskEvents,
+  taskLogs,
+  users,
+  repos,
+  workRuns,
+  ticketProviders,
+} from "../db/schema.js";
 import * as runLogService from "./run-log-service.js";
 import {
   TaskState,
@@ -9,6 +17,7 @@ import {
   InvalidTransitionError,
   normalizeRepoUrl,
   DEFAULT_STALL_THRESHOLD_MS,
+  DEFAULT_TICKET_LABEL,
   parseIntEnv,
   toLocalAgentKind,
   stripNul,
@@ -562,6 +571,11 @@ async function announceTransition(written: WrittenTransition) {
       logger.warn({ err, taskId: id }, "Failed to close linked issue"),
     );
   }
+  if (releasesLinkedIssue(task, toState) && task.ticketExternalId) {
+    releaseIssue(task.repoUrl, task.ticketExternalId, task.ticketSource!).catch((err) =>
+      logger.warn({ err, taskId: id }, "Failed to take the trigger label off the linked issue"),
+    );
+  }
 
   // Dispatch webhook notifications for relevant state changes
   const webhookEventMap: Partial<Record<TaskState, WebhookEvent>> = {
@@ -677,6 +691,37 @@ export function closesLinkedIssue(
   if (process.env.OPTIO_CLOSE_ISSUE_ON_COMPLETE === "false") return false;
   const isRepoIssue = task.ticketSource === "github" || task.ticketSource === "gitlab";
   return toState === TaskState.COMPLETED && isRepoIssue && !!task.ticketExternalId;
+}
+
+/**
+ * A cancelled task gives its issue back: the ticket sweep would otherwise
+ * create the task again while the issue still carries the trigger label.
+ * Adding the label again is how someone asks for a new task.
+ */
+export function releasesLinkedIssue(
+  task: { ticketSource: string | null; ticketExternalId: string | null },
+  toState: TaskState,
+): boolean {
+  const isRepoIssue = task.ticketSource === "github" || task.ticketSource === "gitlab";
+  return toState === TaskState.CANCELLED && isRepoIssue && !!task.ticketExternalId;
+}
+
+async function releaseIssue(repoUrl: string, issueNumber: string, source: string) {
+  const providers = await db
+    .select({ config: ticketProviders.config })
+    .from(ticketProviders)
+    .where(eq(ticketProviders.source, source));
+  const labels = new Set(
+    providers.map((p) => (p.config as { label?: string } | null)?.label ?? DEFAULT_TICKET_LABEL),
+  );
+  if (labels.size === 0) labels.add(DEFAULT_TICKET_LABEL);
+
+  const { getGitPlatformForRepo } = await import("./git-token-service.js");
+  const { platform, ri } = await getGitPlatformForRepo(repoUrl, { server: true });
+  for (const label of labels) {
+    await platform.removeLabelFromIssue(ri, parseInt(issueNumber, 10), label);
+  }
+  logger.info({ repoUrl, issueNumber, labels: [...labels] }, "Released linked issue");
 }
 
 async function closeIssue(repoUrl: string, issueNumber: string, prUrl?: string | null) {

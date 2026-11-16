@@ -168,6 +168,8 @@ export interface GitPlatform {
     label: { name: string; color: string; description?: string },
   ): Promise<void>;
   addLabelsToIssue(ri: RepoIdentifier, issueNumber: number, labels: string[]): Promise<void>;
+  /** Takes one label off an issue; a label the issue does not carry is not an error. */
+  removeLabelFromIssue(ri: RepoIdentifier, issueNumber: number, label: string): Promise<void>;
   createIssueComment(ri: RepoIdentifier, issueNumber: number, body: string): Promise<void>;
   closeIssue(ri: RepoIdentifier, issueNumber: number): Promise<void>;
 

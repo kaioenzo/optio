@@ -906,6 +906,18 @@ export class GitLabPlatform implements GitPlatform {
     });
   }
 
+  async removeLabelFromIssue(
+    ri: RepoIdentifier,
+    issueNumber: number,
+    label: string,
+  ): Promise<void> {
+    await this.fetchJson(this.url(ri, `/issues/${issueNumber}`), {
+      method: "PUT",
+      headers: this.headers(true),
+      body: JSON.stringify({ remove_labels: label }),
+    });
+  }
+
   async createIssueComment(ri: RepoIdentifier, issueNumber: number, body: string): Promise<void> {
     await this.fetchJson(this.url(ri, `/issues/${issueNumber}/notes`), {
       method: "POST",

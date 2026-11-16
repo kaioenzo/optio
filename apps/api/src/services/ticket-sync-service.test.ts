@@ -301,6 +301,51 @@ describe("ticket-sync-service", () => {
     expect(taskService.createTask).not.toHaveBeenCalled();
   });
 
+  it("creates the task again when the earlier one was cancelled", async () => {
+    mockDbSelect([
+      {
+        id: "p1",
+        source: "github",
+        config: { repoUrl: "https://github.com/o/r" },
+        enabled: true,
+        initialSyncAt: new Date("2026-01-01"),
+      },
+    ]);
+
+    vi.mocked(getTicketProvider).mockReturnValue({
+      fetchActionableTickets: vi.fn().mockResolvedValue([
+        {
+          title: "Relabelled",
+          body: "",
+          source: "github",
+          externalId: "123",
+          url: "",
+          labels: [],
+          repo: null,
+        },
+      ]),
+      fetchTicketComments: vi.fn().mockResolvedValue([]),
+      addComment: vi.fn().mockResolvedValue(undefined),
+    } as any);
+
+    vi.mocked(taskService.listTasks).mockResolvedValue([
+      {
+        state: "cancelled",
+        ticketSource: "github",
+        ticketExternalId: "123",
+        repoUrl: "https://github.com/o/r",
+      },
+    ] as any);
+    vi.mocked(taskService.createTask).mockResolvedValue({ id: "task-2", maxRetries: 3 } as any);
+
+    const count = await syncAllTickets();
+
+    expect(count).toBe(1);
+    expect(taskService.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ ticketSource: "github", ticketExternalId: "123" }),
+    );
+  });
+
   it("uses codex agent type when ticket has codex label", async () => {
     mockDbSelect([
       {

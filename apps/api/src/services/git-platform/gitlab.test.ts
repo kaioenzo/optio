@@ -683,6 +683,18 @@ describe("GitLabPlatform", () => {
     });
   });
 
+  describe("removeLabelFromIssue", () => {
+    it("sends PUT with remove_labels", async () => {
+      mockJsonResponse({});
+
+      await platform.removeLabelFromIssue(ri, 10, "optio");
+
+      const call = mockFetch.mock.calls[0];
+      expect(call[1].method).toBe("PUT");
+      expect(JSON.parse(call[1].body)).toEqual({ remove_labels: "optio" });
+    });
+  });
+
   describe("createLabel", () => {
     it("ignores 409 (already exists)", async () => {
       mockFetch.mockResolvedValueOnce({
