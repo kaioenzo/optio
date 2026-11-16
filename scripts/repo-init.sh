@@ -26,6 +26,13 @@ if [ "${OPTIO_GIT_HOST}" = "github" ] && [ -n "${GITLAB_HOSTS:-}" ]; then
 fi
 echo "[optio] Detected git platform: ${OPTIO_GIT_HOST}"
 
+# The kubelet applies fsGroup to the home volume on every mount, which leaves
+# glab's config group-writable; glab then refuses to read it and every call fails.
+glab_login() {
+  chmod 600 ~/.config/glab-cli/config.yml 2>/dev/null || true
+  glab auth login --hostname "$1" --token "${GITLAB_TOKEN}" 2>/dev/null || true
+}
+
 # Set up git credentials for initial clone.
 # Priority: Envoy secret proxy > dynamic credential helper > static PAT fallback.
 # Dynamic credential helpers are re-configured per-task at exec time by the API server.
@@ -57,7 +64,7 @@ elif [ -n "${OPTIO_GIT_CREDENTIAL_URL:-}" ] && [ -f /usr/local/bin/optio-git-cre
     case "${OPTIO_REPO_URL}" in
       *://*) GITLAB_HOST=$(echo "${OPTIO_REPO_URL}" | sed -E 's|.*://([^/]+).*|\1|') ;;
     esac
-    glab auth login --hostname "${GITLAB_HOST}" --token "${GITLAB_TOKEN}" 2>/dev/null || true
+    glab_login "${GITLAB_HOST}"
     echo "[optio] GitLab CLI authenticated (host: ${GITLAB_HOST})"
   fi
 
@@ -95,7 +102,7 @@ elif [ -n "${GITHUB_TOKEN:-}" ] || [ -n "${GITLAB_TOKEN:-}" ]; then
     echo "https://oauth2:${GITLAB_TOKEN}@${GITLAB_HOST}" >> ~/.git-credentials
     # Authenticate glab CLI if available
     if command -v glab >/dev/null 2>&1; then
-      glab auth login --hostname "${GITLAB_HOST}" --token "${GITLAB_TOKEN}" 2>/dev/null || true
+      glab_login "${GITLAB_HOST}"
     fi
     echo "[optio] GitLab credentials configured (host: ${GITLAB_HOST})"
   fi
