@@ -381,6 +381,22 @@ function decideNeedsAttention(): RepoAction {
 }
 
 function decidePrOpened(snapshot: WorldSnapshot): RepoAction {
+  // The heartbeat is only live while the agent still runs after opening its
+  // PR. A silent agent may be hung or mid-way through side effects, so a
+  // person decides; the process and the workspace are left as they are.
+  if (snapshot.heartbeat.isStale) {
+    return {
+      kind: "transition",
+      to: TaskState.NEEDS_ATTENTION,
+      statusPatch: {
+        errorMessage: `Agent stalled after opening its PR: no activity for ${Math.round(
+          snapshot.heartbeat.silentForMs / 1000,
+        )}s. The agent process and its workspace were left running; inspect before resuming.`,
+      },
+      trigger: "stall_detected",
+      reason: "pr_opened_heartbeat_stale",
+    };
+  }
   return decideFromPrStatus(snapshot, /*allowFailComplete*/ true);
 }
 

@@ -127,11 +127,12 @@ async function buildRepoSnapshot(ref: RunRef): Promise<WorldSnapshot | null> {
     countRecentAutoResumes(ref.id).catch(() => 0),
   ]);
 
-  const stallThresholdMs = parseIntEnv("OPTIO_STALL_THRESHOLD_MS", DEFAULT_STALL_THRESHOLD_MS);
-  // Local tasks have no server-side activity feed; the daemon owns liveness.
+  const stallThresholdMs =
+    repoConfig?.stallThresholdMs ??
+    parseIntEnv("OPTIO_STALL_THRESHOLD_MS", DEFAULT_STALL_THRESHOLD_MS);
   const heartbeat = computeHeartbeat(
     row.lastActivityAt ?? null,
-    row.state === TaskState.RUNNING && row.runTarget !== "local",
+    watchesHeartbeat(row),
     stallThresholdMs,
     now,
   );
@@ -422,6 +423,7 @@ async function loadRepoSettings(repoUrl: string, workspaceId: string | null) {
     offPeakOnly: row.offPeakOnly ?? false,
     maxConcurrentTasks: row.maxConcurrentTasks ?? 2,
     maxAutoResumes: row.maxAutoResumes ?? null,
+    stallThresholdMs: row.stallThresholdMs ?? null,
   };
 }
 
@@ -550,6 +552,22 @@ function loadStandaloneRun(
 }
 
 // ── Heartbeat helper ────────────────────────────────────────────────────────
+
+/**
+ * Whether a repo run's silence means something. An agent can keep working
+ * after its PR opens (CI, merge, deploy), so a PR_OPENED task whose run is
+ * still going is watched like a running one. Local tasks have no server-side
+ * activity feed; the daemon owns their liveness.
+ */
+export function watchesHeartbeat(row: {
+  state: string;
+  execState: "started" | "exited" | null;
+  runTarget: string | null;
+}): boolean {
+  if (row.runTarget === "local") return false;
+  if (row.state === TaskState.RUNNING) return true;
+  return row.state === TaskState.PR_OPENED && row.execState === "started";
+}
 
 function computeHeartbeat(
   lastActivityAt: Date | null,

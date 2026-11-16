@@ -536,6 +536,33 @@ describe("reconcileRepo — PR_OPENED", () => {
     if (action.kind === "transition") expect(action.to).toBe(TaskState.COMPLETED);
   });
 
+  it("agent still running after the PR went silent → NEEDS_ATTENTION", () => {
+    const s = snapshot({}, openedStatus(), {
+      pr: makePr({ state: "open" }),
+      heartbeat: {
+        lastActivityAt: new Date(NOW.getTime() - 1_500_000),
+        isStale: true,
+        silentForMs: 1_500_000,
+      },
+    });
+    const action = reconcileRepo(s);
+    expect(action.kind).toBe("transition");
+    if (action.kind === "transition") {
+      expect(action.to).toBe(TaskState.NEEDS_ATTENTION);
+      expect(action.trigger).toBe("stall_detected");
+    }
+  });
+
+  it("a quiet heartbeat leaves the PR machinery in charge", () => {
+    const s = snapshot({}, openedStatus(), {
+      pr: makePr({ merged: true, state: "merged" }),
+      heartbeat: { lastActivityAt: null, isStale: false, silentForMs: 0 },
+    });
+    const action = reconcileRepo(s);
+    if (action.kind === "transition") expect(action.to).toBe(TaskState.COMPLETED);
+    else throw new Error(`expected a transition, got ${action.reason}`);
+  });
+
   it("PR closed without merge → FAILED", () => {
     const s = snapshot({}, openedStatus(), { pr: makePr({ state: "closed" }) });
     const action = reconcileRepo(s);
