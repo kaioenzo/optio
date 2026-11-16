@@ -66,7 +66,10 @@ export async function controlTask(
   } else {
     const prompt = opts.prompt ?? buildRestartPrompt(task);
     await taskService.transitionTask(id, TaskState.QUEUED, "force_restart", prompt.slice(0, 200));
-    data = { ...data, resumePrompt: prompt, restartFromBranch: !!task.prUrl };
+    // Always from the task's branch: the exec script falls back to a fresh one
+    // when none was pushed, and without the flag the worker sees an MR the
+    // task opened (prUrl not recorded yet) and skips the agent.
+    data = { ...data, resumePrompt: prompt, restartFromBranch: true };
   }
   await taskQueue.add("process-task", data, {
     jobId: `${id}-${action === "run-now" ? "runnow" : action}-${Date.now()}`,

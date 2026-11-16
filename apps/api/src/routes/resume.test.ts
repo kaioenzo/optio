@@ -162,6 +162,7 @@ describe("POST /api/tasks/:id/force-restart", () => {
     // No resumeSessionId should be present (fresh session)
     const addCall = mockQueueAdd.mock.calls[0][1];
     expect(addCall.resumeSessionId).toBeUndefined();
+    expect(addCall.restartFromBranch).toBe(true);
   });
 
   it("builds context-aware prompt for PR with failing CI", async () => {
