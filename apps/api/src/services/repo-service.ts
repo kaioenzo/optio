@@ -209,6 +209,7 @@ export async function updateRepo(
     openclawAgent?: string | null;
     maxTurnsCoding?: number;
     maxTurnsReview?: number;
+    stallThresholdMs?: number | null;
     autoResume?: boolean;
     maxConcurrentTasks?: number;
     maxPodInstances?: number;

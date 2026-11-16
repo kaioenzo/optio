@@ -120,6 +120,16 @@ const updateRepoSchema = z
       .optional(),
     externalReviewWaitForCi: z.boolean().optional(),
     maxAutoResumes: z.number().int().min(1).max(100).nullable().optional(),
+    stallThresholdMs: z
+      .number()
+      .int()
+      .min(60_000)
+      .max(86_400_000)
+      .nullable()
+      .optional()
+      .describe(
+        "How long an agent may stay silent before it counts as stalled. Null = global default.",
+      ),
     slackWebhookUrl: z
       .string()
       .url()

@@ -351,6 +351,29 @@ describe("PATCH /api/repos/:id", () => {
     );
   });
 
+  it("sets the repo's stall threshold and rejects one under a minute", async () => {
+    mockGetRepo.mockResolvedValue(mockRepoData);
+    mockUpdateRepo.mockResolvedValue({ ...mockRepoData, stallThresholdMs: 1_200_000 });
+
+    const ok = await app.inject({
+      method: "PATCH",
+      url: "/api/repos/repo-1",
+      payload: { stallThresholdMs: 1_200_000 },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(mockUpdateRepo).toHaveBeenCalledWith(
+      "repo-1",
+      expect.objectContaining({ stallThresholdMs: 1_200_000 }),
+    );
+
+    const tooShort = await app.inject({
+      method: "PATCH",
+      url: "/api/repos/repo-1",
+      payload: { stallThresholdMs: 5_000 },
+    });
+    expect(tooShort.statusCode).toBe(400);
+  });
+
   it("returns 404 for nonexistent repo", async () => {
     mockGetRepo.mockResolvedValue(null);
 
