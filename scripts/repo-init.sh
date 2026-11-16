@@ -30,7 +30,11 @@ echo "[optio] Detected git platform: ${OPTIO_GIT_HOST}"
 # glab's config group-writable; glab then refuses to read it and every call fails.
 glab_login() {
   chmod 600 ~/.config/glab-cli/config.yml 2>/dev/null || true
-  glab auth login --hostname "$1" --token "${GITLAB_TOKEN}" 2>/dev/null || true
+  if glab auth login --hostname "$1" --token "${GITLAB_TOKEN}" 2>/dev/null; then
+    echo "[optio] GitLab CLI authenticated (host: $1)"
+  else
+    echo "[optio] GitLab CLI login failed (host: $1)" >&2
+  fi
 }
 
 # Set up git credentials for initial clone.
@@ -65,7 +69,6 @@ elif [ -n "${OPTIO_GIT_CREDENTIAL_URL:-}" ] && [ -f /usr/local/bin/optio-git-cre
       *://*) GITLAB_HOST=$(echo "${OPTIO_REPO_URL}" | sed -E 's|.*://([^/]+).*|\1|') ;;
     esac
     glab_login "${GITLAB_HOST}"
-    echo "[optio] GitLab CLI authenticated (host: ${GITLAB_HOST})"
   fi
 
 elif [ "${OPTIO_GIT_HOST}" = "codecommit" ] && command -v aws >/dev/null 2>&1; then
