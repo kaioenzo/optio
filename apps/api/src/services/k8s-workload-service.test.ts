@@ -120,3 +120,40 @@ describe("service account token", () => {
     expect(template.spec.automountServiceAccountToken).toBe(false);
   });
 });
+
+describe("ensureStatefulSet on an existing StatefulSet", () => {
+  function managerWith(existingImage: string) {
+    const replaced: any[] = [];
+    const manager = Object.create(K8sWorkloadManager.prototype);
+    manager.namespace = "optio";
+    manager.ensureHeadlessService = async () => {};
+    const existing = {
+      spec: { replicas: 1, template: buildTemplate(baseSpec({ image: existingImage })) },
+    };
+    manager.appsApi = {
+      readNamespacedStatefulSet: async () => existing,
+      replaceNamespacedStatefulSet: async ({ body }: { body: any }) => replaced.push(body),
+    };
+    return { manager, replaced };
+  }
+
+  it("replaces the pod template when only the agent image changed", async () => {
+    const { manager, replaced } = managerWith("optio-agent:old");
+
+    await manager.ensureStatefulSet({
+      name: "repo-abc",
+      spec: baseSpec({ image: "optio-agent:new" }),
+    });
+
+    expect(replaced).toHaveLength(1);
+    expect(replaced[0].spec.template.spec.containers[0].image).toBe("optio-agent:new");
+  });
+
+  it("leaves an up-to-date StatefulSet alone", async () => {
+    const { manager, replaced } = managerWith("optio-agent:latest");
+
+    await manager.ensureStatefulSet({ name: "repo-abc", spec: baseSpec() });
+
+    expect(replaced).toHaveLength(0);
+  });
+});

@@ -138,12 +138,16 @@ export class K8sWorkloadManager {
       const currentServiceAccount = existingSts.spec?.template?.spec?.serviceAccountName;
       const desiredServiceAccount = desiredPodTemplate.spec?.serviceAccountName;
 
+      const currentImage = existingSts.spec?.template?.spec?.containers?.[0]?.image;
+      const desiredImage = desiredPodTemplate.spec?.containers?.[0]?.image;
+
       const envChanged = JSON.stringify(currentEnv) !== JSON.stringify(desiredEnv);
       const serviceAccountChanged = currentServiceAccount !== desiredServiceAccount;
+      const imageChanged = currentImage !== desiredImage;
 
-      if (envChanged || serviceAccountChanged) {
+      if (envChanged || serviceAccountChanged || imageChanged) {
         logger.info(
-          { name, envChanged, serviceAccountChanged },
+          { name, envChanged, serviceAccountChanged, imageChanged },
           "StatefulSet pod template needs update",
         );
 
