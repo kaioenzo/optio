@@ -27,9 +27,9 @@ fi
 echo "[optio] Detected git platform: ${OPTIO_GIT_HOST}"
 
 # The kubelet applies fsGroup to the home volume on every mount, which leaves
-# glab's config group-writable; glab then refuses to read it and every call fails.
+# glab's files group-writable; glab then refuses to read them and every call fails.
 glab_login() {
-  chmod 600 ~/.config/glab-cli/config.yml 2>/dev/null || true
+  find ~/.config/glab-cli -type f -exec chmod 600 {} + 2>/dev/null || true
   if glab auth login --hostname "$1" --token "${GITLAB_TOKEN}" 2>/dev/null; then
     echo "[optio] GitLab CLI authenticated (host: $1)"
   else
