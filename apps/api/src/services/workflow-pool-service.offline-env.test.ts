@@ -178,3 +178,16 @@ describe("getOrCreateWorkflowPod — offline baseline (OPTIO_AGENT_OFFLINE)", ()
     });
   });
 });
+
+describe("getOrCreateWorkflowPod — init script", () => {
+  it("refreshes the OpenCode model list before marking the pod ready", async () => {
+    provisionNewPod(0);
+    mockRuntimeCreate.mockResolvedValueOnce({ id: "k8s-id", name: "optio-wf-wf1-0-abcd" });
+
+    await getOrCreateWorkflowPod("wf-1", { maxAgentsPerPod: 2, maxPodInstances: 1 });
+    const script: string = mockRuntimeCreate.mock.calls[0][0].command[2];
+    const warm = script.indexOf("opencode models --refresh");
+    expect(warm).toBeGreaterThan(-1);
+    expect(warm).toBeLessThan(script.indexOf("touch /workspace/.ready"));
+  });
+});

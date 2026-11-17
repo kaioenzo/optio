@@ -17,7 +17,7 @@ import { logger } from "../logger.js";
 import { resolveImage } from "./repo-pool-service.js";
 import { getWorkloadManager, isStatefulSetEnabled } from "./k8s-workload-service.js";
 import * as podPool from "./agent-pod-pool.js";
-import { buildPooledStartScript, KEEP_POD_ALIVE } from "../utils/pod-env.js";
+import { buildPooledStartScript, KEEP_POD_ALIVE, WARM_OPENCODE_MODELS } from "../utils/pod-env.js";
 import { runHome } from "../utils/harness-config.js";
 import type { RunStartResult } from "@optio/container-runtime";
 import { updatedAtMatches } from "../utils/pg-timestamp.js";
@@ -61,6 +61,7 @@ function buildInitScript(): string {
   return [
     "set -e",
     "mkdir -p /workspace/runs",
+    WARM_OPENCODE_MODELS,
     "touch /workspace/.ready",
     "echo '[optio] Workflow pod ready'",
     KEEP_POD_ALIVE,
