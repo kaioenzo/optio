@@ -250,7 +250,7 @@ export const CHECKOUT_REPO: readonly string[] = [
  * image (images/base.Dockerfile); an older image falls back to `sleep`.
  */
 export const WARM_OPENCODE_MODELS =
-  "if command -v opencode >/dev/null 2>&1; then timeout 30 opencode models --refresh >/dev/null 2>&1 || true; fi";
+  "if command -v opencode >/dev/null 2>&1; then timeout 90 opencode models --refresh >/dev/null 2>&1 || true; fi";
 
 export const KEEP_POD_ALIVE =
   "if command -v tini >/dev/null 2>&1; then exec tini -- sleep infinity; else exec sleep infinity; fi";
