@@ -846,6 +846,24 @@ export class K8sWorkloadManager {
     }
   }
 
+  async listObjectNames(
+    apiVersion: string,
+    kind: string,
+    labelSelector: string,
+  ): Promise<string[]> {
+    const list = await this.objectApi.list(
+      apiVersion,
+      kind,
+      this.namespace,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      labelSelector,
+    );
+    return list.items.flatMap((item) => (item.metadata?.name ? [item.metadata.name] : []));
+  }
+
   async deleteObject(apiVersion: string, kind: string, name: string): Promise<void> {
     try {
       await this.objectApi.delete({

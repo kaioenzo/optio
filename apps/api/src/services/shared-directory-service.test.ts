@@ -43,8 +43,34 @@ vi.mock("../logger.js", () => ({
   },
 }));
 
+const workloadManager = vi.hoisted(() => ({
+  createObjectIfMissing: vi.fn(),
+  listObjectNames: vi.fn(),
+  deleteObject: vi.fn(),
+}));
+vi.mock("./k8s-workload-service.js", () => ({
+  getWorkloadManager: () => workloadManager,
+}));
+
+const runtimeExec = vi.hoisted(() => vi.fn());
+vi.mock("./container-service.js", () => ({
+  getRuntime: () => ({ exec: runtimeExec }),
+}));
+
+const listPods = vi.hoisted(() => vi.fn());
+vi.mock("./agent-pod-pool.js", () => ({
+  listPods,
+  podHandle: (pod: { podId: string | null; podName: string }) => ({
+    id: pod.podId ?? pod.podName,
+    name: pod.podName,
+  }),
+}));
+
 import { db } from "../db/client.js";
 import {
+  ensureCachePvcForPod,
+  getSharedDirectoryUsage,
+  cleanupCachePvcsForRepo,
   listSharedDirectories,
   createSharedDirectory,
   deleteSharedDirectory,
@@ -311,5 +337,81 @@ describe("shared-directory-service", () => {
       });
       expect(result).toContain("mount location");
     });
+  });
+});
+
+describe("shared-directory Kubernetes access", () => {
+  const repoUrl = "https://gitlab.com/acme/app";
+  const dir = {
+    id: "d1",
+    name: "deps",
+    workspaceId: null,
+    mountLocation: "workspace",
+    mountSubPath: "node_modules",
+    sizeGi: 2,
+  } as any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("creates the cache PVC through the Kubernetes client", async () => {
+    workloadManager.createObjectIfMissing.mockResolvedValue(undefined);
+
+    const result = await ensureCachePvcForPod(repoUrl, 0, [dir]);
+
+    expect(workloadManager.createObjectIfMissing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "PersistentVolumeClaim",
+        metadata: expect.objectContaining({ name: result?.pvcName }),
+        spec: expect.objectContaining({ resources: { requests: { storage: "2Gi" } } }),
+      }),
+    );
+  });
+
+  it("returns null when the cache PVC cannot be created", async () => {
+    workloadManager.createObjectIfMissing.mockRejectedValue(new Error("forbidden"));
+
+    await expect(ensureCachePvcForPod(repoUrl, 0, [dir])).resolves.toBeNull();
+  });
+
+  it("reads disk usage by executing du in a ready pod", async () => {
+    listPods.mockResolvedValue([
+      { state: "ready", workspaceId: null, podName: "optio-repo-x-0", podId: null },
+    ]);
+    runtimeExec.mockResolvedValue({
+      stdout: (async function* () {
+        yield Buffer.from("512M\t/workspace/node_modules\n");
+      })(),
+      close: vi.fn(),
+    });
+
+    await expect(getSharedDirectoryUsage(dir, repoUrl)).resolves.toBe("512M");
+    expect(runtimeExec).toHaveBeenCalledWith(
+      { id: "optio-repo-x-0", name: "optio-repo-x-0" },
+      ["du", "-sh", "/workspace/node_modules"],
+      { tty: false },
+    );
+  });
+
+  it("deletes only the repo's cache PVCs", async () => {
+    workloadManager.listObjectNames.mockResolvedValue([
+      "optio-cache-https---gitlab-com-acme-app-0",
+      "optio-cache-https---gitlab-com-other-0",
+    ]);
+
+    await cleanupCachePvcsForRepo(repoUrl);
+
+    expect(workloadManager.listObjectNames).toHaveBeenCalledWith(
+      "v1",
+      "PersistentVolumeClaim",
+      "optio.type=cache-pvc",
+    );
+    expect(workloadManager.deleteObject).toHaveBeenCalledTimes(1);
+    expect(workloadManager.deleteObject).toHaveBeenCalledWith(
+      "v1",
+      "PersistentVolumeClaim",
+      "optio-cache-https---gitlab-com-acme-app-0",
+    );
   });
 });

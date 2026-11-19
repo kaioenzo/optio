@@ -2,7 +2,10 @@ import { isolatedPodResource } from "./pod-isolation.js";
 import { eq, and } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { repoSharedDirectories, repos } from "../db/schema.js";
-import { listPods } from "./agent-pod-pool.js";
+import { listPods, podHandle, type AgentPod } from "./agent-pod-pool.js";
+import { getRuntime } from "./container-service.js";
+import { getWorkloadManager } from "./k8s-workload-service.js";
+import type { KubernetesObject } from "@kubernetes/client-node";
 import { logger } from "../logger.js";
 import { MAX_CACHE_SIZE_PER_DIR_GI, MAX_CACHE_SIZE_TOTAL_GI } from "@optio/shared";
 
@@ -231,37 +234,16 @@ export async function ensureCachePvcForPod(
   const storageClass = process.env.OPTIO_CACHE_STORAGE_CLASS || undefined;
 
   try {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execFileAsync = promisify(execFile);
-    const namespace = process.env.OPTIO_NAMESPACE ?? "optio";
-
-    // Check if PVC already exists
-    try {
-      await execFileAsync("kubectl", ["get", "pvc", pvcName, "-n", namespace]);
-    } catch {
-      // PVC doesn't exist, create it
-      const storageClassLine = storageClass ? `\n  storageClassName: ${storageClass}` : "";
-      const pvcManifest = `apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: ${pvcName}
-  namespace: ${namespace}
-  labels:
-    managed-by: optio
-    optio.type: cache-pvc
-spec:
-  accessModes: [ReadWriteOnce]${storageClassLine}
-  resources:
-    requests:
-      storage: ${totalSizeGi}Gi`;
-
-      await execFileAsync("bash", [
-        "-c",
-        `echo '${pvcManifest}' | kubectl apply -f - -n ${namespace}`,
-      ]);
-      logger.info({ pvcName, totalSizeGi }, "Created cache PVC for repo pod");
-    }
+    await getWorkloadManager().createObjectIfMissing({
+      apiVersion: "v1",
+      kind: "PersistentVolumeClaim",
+      metadata: { name: pvcName, labels: { "managed-by": "optio", "optio.type": "cache-pvc" } },
+      spec: {
+        accessModes: ["ReadWriteOnce"],
+        ...(storageClass ? { storageClassName: storageClass } : {}),
+        resources: { requests: { storage: `${totalSizeGi}Gi` } },
+      },
+    } as KubernetesObject);
   } catch (err) {
     logger.warn({ err, pvcName }, "Failed to create cache PVC");
     return null;
@@ -289,17 +271,7 @@ export async function clearSharedDirectory(dir: SharedDirectory, repoUrl: string
   for (const pod of pods) {
     if (!pod.podName) continue;
     try {
-      const { execFile } = await import("node:child_process");
-      const { promisify } = await import("node:util");
-      const execFileAsync = promisify(execFile);
-      const namespace = process.env.OPTIO_NAMESPACE ?? "optio";
-
-      await execFileAsync("kubectl", [
-        "exec",
-        pod.podName,
-        "-n",
-        namespace,
-        "--",
+      await execInPod(pod, [
         "sh",
         "-c",
         `rm -rf ${mountPath}/* ${mountPath}/.[!.]* ${mountPath}/..?* 2>/dev/null || true`,
@@ -339,21 +311,7 @@ export async function getSharedDirectoryUsage(
   const mountPath = getMountPath(dir.mountLocation, dir.mountSubPath);
 
   try {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execFileAsync = promisify(execFile);
-    const namespace = process.env.OPTIO_NAMESPACE ?? "optio";
-
-    const { stdout } = await execFileAsync("kubectl", [
-      "exec",
-      pod.podName,
-      "-n",
-      namespace,
-      "--",
-      "du",
-      "-sh",
-      mountPath,
-    ]);
+    const stdout = await execInPod(pod, ["du", "-sh", mountPath]);
 
     return stdout.split("\t")[0]?.trim() ?? null;
   } catch {
@@ -365,98 +323,47 @@ export async function getSharedDirectoryUsage(
  * Clean up all cache PVCs for a repo URL.
  */
 export async function cleanupCachePvcsForRepo(repoUrl: string): Promise<void> {
-  const slug = repoUrl.replace(/[^a-zA-Z0-9]/g, "-").slice(0, 40);
-  const pvcPrefix = `optio-cache-${slug}`;
-  const namespace = process.env.OPTIO_NAMESPACE ?? "optio";
-
-  try {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execFileAsync = promisify(execFile);
-
-    // List PVCs matching the prefix
-    const { stdout } = await execFileAsync("kubectl", [
-      "get",
-      "pvc",
-      "-n",
-      namespace,
-      "-o",
-      "jsonpath={.items[*].metadata.name}",
-      "-l",
-      "optio.type=cache-pvc",
-    ]);
-
-    const pvcNames = stdout
-      .trim()
-      .split(/\s+/)
-      .filter((n: string) => n.startsWith(pvcPrefix));
-
-    for (const name of pvcNames) {
-      try {
-        await execFileAsync("kubectl", [
-          "delete",
-          "pvc",
-          name,
-          "-n",
-          namespace,
-          "--ignore-not-found",
-        ]);
-        logger.info({ pvcName: name }, "Deleted cache PVC");
-      } catch (err) {
-        logger.warn({ err, pvcName: name }, "Failed to delete cache PVC");
-      }
-    }
-  } catch (err) {
-    logger.warn({ err, repoUrl }, "Failed to cleanup cache PVCs");
-  }
+  await deleteRepoPvcs(repoUrl, "optio-cache", "cache-pvc");
 }
 
 /**
  * Clean up home PVCs for a repo URL (fixes pre-existing leak).
  */
 export async function cleanupHomePvcsForRepo(repoUrl: string): Promise<void> {
+  await deleteRepoPvcs(repoUrl, "optio-home", "home-pvc");
+}
+
+async function deleteRepoPvcs(repoUrl: string, prefix: string, type: string): Promise<void> {
   const slug = repoUrl.replace(/[^a-zA-Z0-9]/g, "-").slice(0, 40);
-  const pvcPrefix = `optio-home-${slug}`;
-  const namespace = process.env.OPTIO_NAMESPACE ?? "optio";
+  const pvcPrefix = `${prefix}-${slug}`;
+  const manager = getWorkloadManager();
 
+  let pvcNames: string[];
   try {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execFileAsync = promisify(execFile);
-
-    // List PVCs matching the prefix
-    const { stdout } = await execFileAsync("kubectl", [
-      "get",
-      "pvc",
-      "-n",
-      namespace,
-      "-o",
-      "jsonpath={.items[*].metadata.name}",
-      "-l",
-      "optio.type=home-pvc",
-    ]);
-
-    const pvcNames = stdout
-      .trim()
-      .split(/\s+/)
-      .filter((n: string) => n.startsWith(pvcPrefix));
-
-    for (const name of pvcNames) {
-      try {
-        await execFileAsync("kubectl", [
-          "delete",
-          "pvc",
-          name,
-          "-n",
-          namespace,
-          "--ignore-not-found",
-        ]);
-        logger.info({ pvcName: name }, "Deleted home PVC");
-      } catch (err) {
-        logger.warn({ err, pvcName: name }, "Failed to delete home PVC");
-      }
-    }
+    pvcNames = (
+      await manager.listObjectNames("v1", "PersistentVolumeClaim", `optio.type=${type}`)
+    ).filter((name) => name.startsWith(pvcPrefix));
   } catch (err) {
-    logger.warn({ err, repoUrl }, "Failed to cleanup home PVCs");
+    logger.warn({ err, repoUrl, type }, "Failed to list repo PVCs");
+    return;
   }
+
+  for (const name of pvcNames) {
+    try {
+      await manager.deleteObject("v1", "PersistentVolumeClaim", name);
+      logger.info({ pvcName: name }, "Deleted repo PVC");
+    } catch (err) {
+      logger.warn({ err, pvcName: name }, "Failed to delete repo PVC");
+    }
+  }
+}
+
+async function execInPod(pod: AgentPod, command: string[]): Promise<string> {
+  const session = await getRuntime().exec(podHandle(pod), command, { tty: false });
+  let output = "";
+  for await (const chunk of session.stdout as AsyncIterable<Buffer>) {
+    output += chunk.toString();
+  }
+  session.close();
+  return output;
 }
