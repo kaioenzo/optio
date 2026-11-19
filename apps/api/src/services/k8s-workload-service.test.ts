@@ -157,3 +157,86 @@ describe("ensureStatefulSet on an existing StatefulSet", () => {
     expect(replaced).toHaveLength(0);
   });
 });
+
+describe("Kubernetes object helpers", () => {
+  function managerWith(objectApi: Record<string, unknown>) {
+    const manager = Object.create(K8sWorkloadManager.prototype);
+    manager.namespace = "optio";
+    manager.objectApi = objectApi;
+    return manager;
+  }
+  const conflict = Object.assign(new Error("exists"), { code: 409 });
+  const notFound = Object.assign(new Error("gone"), { code: 404 });
+  const policy = {
+    apiVersion: "networking.k8s.io/v1",
+    kind: "NetworkPolicy",
+    metadata: { name: "optio-egress-pod" },
+  };
+
+  it("creates an object in the manager's namespace", async () => {
+    const created: any[] = [];
+    const manager = managerWith({ create: async (spec: any) => created.push(spec) });
+
+    await manager.applyObject(policy);
+
+    expect(created[0].metadata).toEqual({ name: "optio-egress-pod", namespace: "optio" });
+  });
+
+  it("patches the object when it already exists", async () => {
+    const patched: any[] = [];
+    const manager = managerWith({
+      create: async () => {
+        throw conflict;
+      },
+      patch: async (spec: any) => patched.push(spec),
+    });
+
+    await manager.applyObject(policy);
+
+    expect(patched).toHaveLength(1);
+  });
+
+  it("propagates apply failures other than a conflict", async () => {
+    const manager = managerWith({
+      create: async () => {
+        throw new Error("forbidden");
+      },
+    });
+
+    await expect(manager.applyObject(policy)).rejects.toThrow("forbidden");
+  });
+
+  it("leaves an existing object untouched in createObjectIfMissing", async () => {
+    const manager = managerWith({
+      create: async () => {
+        throw conflict;
+      },
+    });
+
+    await expect(manager.createObjectIfMissing(policy)).resolves.toBeUndefined();
+  });
+
+  it("treats deleting a missing object as success", async () => {
+    const manager = managerWith({
+      delete: async () => {
+        throw notFound;
+      },
+    });
+
+    await expect(
+      manager.deleteObject("networking.k8s.io/v1", "NetworkPolicy", "optio-egress-pod"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("propagates other delete failures", async () => {
+    const manager = managerWith({
+      delete: async () => {
+        throw new Error("forbidden");
+      },
+    });
+
+    await expect(manager.deleteObject("v1", "ConfigMap", "envoy-config-x")).rejects.toThrow(
+      "forbidden",
+    );
+  });
+});

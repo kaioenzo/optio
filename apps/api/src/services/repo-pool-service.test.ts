@@ -138,6 +138,9 @@ vi.mock("../logger.js", () => ({
 const workloadManager = vi.hoisted(() => ({
   ensureStatefulSet: vi.fn(),
   waitForPodRunning: vi.fn(),
+  applyObject: vi.fn(),
+  createObjectIfMissing: vi.fn(),
+  deleteObject: vi.fn(),
 }));
 vi.mock("./k8s-workload-service.js", () => ({
   isStatefulSetEnabled: vi.fn(() => false),
@@ -157,6 +160,7 @@ import {
   listRepoPods,
   reconcileActiveTaskCounts,
   deleteNetworkPolicy,
+  deleteEnvoyConfigMap,
   killOrphanedAgentInPod,
   startTaskInRepoPod,
   type RepoPod,
@@ -575,62 +579,55 @@ describe("reconcileActiveTaskCounts", () => {
 // ── deleteNetworkPolicy ────────────────────────────────────────────
 
 describe("deleteNetworkPolicy", () => {
-  let mockExecFile: ReturnType<typeof vi.fn<(...args: unknown[]) => Promise<unknown>>>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-    mockExecFile = vi.fn().mockResolvedValue({ stdout: "", stderr: "" });
-    vi.doMock("node:child_process", () => ({
-      execFile: (cmd: string, args: string[], cb: any) => {
-        mockExecFile(cmd, args)
-          .then((res: any) => cb(null, res.stdout, res.stderr))
-          .catch((err: any) => cb(err));
-      },
-    }));
-    vi.doMock("node:util", () => ({
-      promisify:
-        (fn: any) =>
-        (...args: any[]) =>
-          new Promise((resolve, reject) => {
-            fn(...args, (err: any, ...results: any[]) => {
-              if (err) reject(err);
-              else resolve(results.length <= 1 ? results[0] : results);
-            });
-          }),
-    }));
+    workloadManager.deleteObject.mockResolvedValue(undefined);
   });
 
-  it("calls kubectl delete with the correct policy name", async () => {
+  it("deletes the pod's egress policy through the Kubernetes client", async () => {
     await deleteNetworkPolicy("optio-repo-myorg-myrepo-abc1");
 
-    // The function uses dynamic import, so we can't easily assert the mock.
-    // Instead, verify it doesn't throw (the catch inside handles errors gracefully).
-    expect(true).toBe(true);
+    expect(workloadManager.deleteObject).toHaveBeenCalledWith(
+      "networking.k8s.io/v1",
+      "NetworkPolicy",
+      "optio-egress-optio-repo-myorg-myrepo-abc1",
+    );
   });
 
   it("does not throw when deletion fails", async () => {
-    // deleteNetworkPolicy has a try/catch that swallows errors
+    workloadManager.deleteObject.mockRejectedValueOnce(new Error("forbidden"));
     await expect(deleteNetworkPolicy("nonexistent-pod")).resolves.toBeUndefined();
   });
 
   it("fails provisioning before launching a pod when its requested policy cannot be installed", async () => {
     provisionNewPod();
-    mockExecFile.mockImplementation(async (cmd) => {
-      if (cmd === "bash") throw new Error("NetworkPolicy forbidden");
-      return { stdout: "", stderr: "" };
-    });
-    try {
-      await expect(
-        getOrCreateRepoPod(REPO_URL, "main", {}, undefined, {
-          networkPolicy: "restricted",
-        }),
-      ).rejects.toThrow("NetworkPolicy forbidden");
-      expect(mockRuntimeCreate).not.toHaveBeenCalled();
-      expect(podPool.markPodReady).not.toHaveBeenCalled();
-      expect(podPool.markPodError).toHaveBeenCalled();
-    } finally {
-      mockExecFile.mockResolvedValue({ stdout: "", stderr: "" });
-    }
+    workloadManager.applyObject.mockRejectedValueOnce(new Error("NetworkPolicy forbidden"));
+
+    await expect(
+      getOrCreateRepoPod(REPO_URL, "main", {}, undefined, {
+        networkPolicy: "restricted",
+      }),
+    ).rejects.toThrow("NetworkPolicy forbidden");
+    expect(workloadManager.applyObject).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "NetworkPolicy" }),
+    );
+    expect(mockRuntimeCreate).not.toHaveBeenCalled();
+    expect(podPool.markPodReady).not.toHaveBeenCalled();
+    expect(podPool.markPodError).toHaveBeenCalled();
+  });
+});
+
+describe("deleteEnvoyConfigMap", () => {
+  it("deletes the owner's Envoy ConfigMap through the Kubernetes client", async () => {
+    workloadManager.deleteObject.mockResolvedValue(undefined);
+
+    await deleteEnvoyConfigMap("optio-repo-abc");
+
+    expect(workloadManager.deleteObject).toHaveBeenCalledWith(
+      "v1",
+      "ConfigMap",
+      "envoy-config-optio-repo-abc",
+    );
   });
 });
 

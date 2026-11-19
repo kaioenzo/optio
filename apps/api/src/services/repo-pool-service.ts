@@ -10,6 +10,7 @@ import * as podPool from "./agent-pod-pool.js";
 import { podIsolationKey, isolatedPodResource, type PodIsolation } from "./pod-isolation.js";
 import { getRuntime } from "./container-service.js";
 import type { ContainerHandle, ContainerSpec, RepoImageConfig } from "@optio/shared";
+import type { KubernetesObject } from "@kubernetes/client-node";
 import type { RunStartResult } from "@optio/container-runtime";
 import {
   DEFAULT_AGENT_IMAGE,
@@ -280,43 +281,18 @@ async function createRepoPod(
   const pvcSuffix = instanceIndex > 0 ? `-${instanceIndex}` : "";
   const pvcName = `${isolatedPodResource("optio-home", repoUrl, isolationKey)}${pvcSuffix}`;
   let pvcReady = false;
-  const namespace = process.env.OPTIO_NAMESPACE ?? "optio";
   // PVCs only exist for the kubernetes runtime. In docker/fake mode the
-  // kubectl shell-out would target whatever cluster the local kubeconfig
+  // Kubernetes client would target whatever cluster the local kubeconfig
   // points at — creating real PVCs from dev/test runs.
   if (process.env.OPTIO_RUNTIME === "kubernetes") {
     try {
-      const { execFile } = await import("node:child_process");
-      const { promisify } = await import("node:util");
-      const execFileAsync = promisify(execFile);
-
-      // Check if PVC already exists
-      try {
-        await execFileAsync("kubectl", ["get", "pvc", pvcName, "-n", namespace]);
-        pvcReady = true;
-      } catch {
-        // PVC doesn't exist, create it
-        const pvcManifest = `apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: ${pvcName}
-  namespace: ${namespace}
-  labels:
-    managed-by: optio
-    optio.type: home-pvc
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 5Gi`;
-        // Use bash -c with heredoc since execFile doesn't support stdin input
-        await execFileAsync("bash", [
-          "-c",
-          `echo '${pvcManifest}' | kubectl apply -f - -n ${namespace}`,
-        ]);
-        pvcReady = true;
-        logger.info({ pvcName }, "Created PVC for repo pod home directory");
-      }
+      await getWorkloadManager().createObjectIfMissing({
+        apiVersion: "v1",
+        kind: "PersistentVolumeClaim",
+        metadata: { name: pvcName, labels: { "managed-by": "optio", "optio.type": "home-pvc" } },
+        spec: { accessModes: ["ReadWriteOnce"], resources: { requests: { storage: "5Gi" } } },
+      } as KubernetesObject);
+      pvcReady = true;
     } catch (err) {
       logger.warn({ err, pvcName }, "Failed to create PVC, pod will use ephemeral storage");
     }
@@ -1146,7 +1122,7 @@ export async function cleanupIdleRepoPods(): Promise<number> {
 
           // Clean up Envoy ConfigMap (one per StatefulSet)
           if (targetReplicas === 0) {
-            await deleteEnvoyConfigMap(`envoy-config-${stsName}`).catch(() => {});
+            await deleteEnvoyConfigMap(stsName).catch(() => {});
           }
         } catch (err) {
           logger.warn(
@@ -1214,45 +1190,26 @@ export async function listRepoPodsForRepo(repoUrl: string): Promise<RepoPod[]> {
  */
 async function applyRestrictedNetworkPolicy(podName: string): Promise<void> {
   const namespace = process.env.OPTIO_NAMESPACE ?? "optio";
-  const policyName = `optio-egress-${podName}`;
-
   const manifest = restrictedAgentNetworkPolicy(
     podName,
     namespace,
     Number.parseInt(process.env.API_PORT ?? "4000", 10),
     JSON.parse(process.env.OPTIO_AGENT_DENIED_EGRESS_CIDRS ?? "[]"),
   );
-
-  const { execFile } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const execFileAsync = promisify(execFile);
-  const manifestJson = JSON.stringify(manifest);
-  await execFileAsync("bash", [
-    "-c",
-    `echo ${JSON.stringify(manifestJson)} | kubectl apply -f - -n ${namespace}`,
-  ]);
-  logger.info({ policyName, podName }, "Applied restricted egress NetworkPolicy");
+  await getWorkloadManager().applyObject(manifest);
+  logger.info(
+    { policyName: manifest.metadata.name, podName },
+    "Applied restricted egress NetworkPolicy",
+  );
 }
 
 /**
  * Delete the NetworkPolicy associated with a repo pod.
  */
 export async function deleteNetworkPolicy(podName: string): Promise<void> {
-  const namespace = process.env.OPTIO_NAMESPACE ?? "optio";
   const policyName = `optio-egress-${podName}`;
-
   try {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execFileAsync = promisify(execFile);
-    await execFileAsync("kubectl", [
-      "delete",
-      "networkpolicy",
-      policyName,
-      "-n",
-      namespace,
-      "--ignore-not-found",
-    ]);
+    await getWorkloadManager().deleteObject("networking.k8s.io/v1", "NetworkPolicy", policyName);
     logger.info({ policyName, podName }, "Deleted NetworkPolicy");
   } catch (err) {
     logger.warn({ err, policyName }, "Failed to delete NetworkPolicy");
@@ -1263,55 +1220,23 @@ export async function deleteNetworkPolicy(podName: string): Promise<void> {
  * Create a K8s ConfigMap for the Envoy proxy configuration.
  */
 async function createEnvoyConfigMap(name: string, envoyYaml: string): Promise<void> {
-  const namespace = process.env.OPTIO_NAMESPACE ?? "optio";
-
-  const manifest = {
+  await getWorkloadManager().applyObject({
     apiVersion: "v1",
     kind: "ConfigMap",
-    metadata: {
-      name,
-      namespace,
-      labels: {
-        "managed-by": "optio",
-        "optio.type": "envoy-config",
-      },
-    },
-    data: {
-      "envoy.yaml": envoyYaml,
-    },
-  };
-
-  const { execFile } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const execFileAsync = promisify(execFile);
-  const manifestJson = JSON.stringify(manifest);
-  await execFileAsync("bash", [
-    "-c",
-    `echo ${JSON.stringify(manifestJson)} | kubectl apply -f - -n ${namespace}`,
-  ]);
+    metadata: { name, labels: { "managed-by": "optio", "optio.type": "envoy-config" } },
+    data: { "envoy.yaml": envoyYaml },
+  } as KubernetesObject);
   logger.info({ configMapName: name }, "Created Envoy ConfigMap");
 }
 
 /**
- * Delete the Envoy ConfigMap associated with a repo pod.
+ * Delete the Envoy ConfigMap associated with a repo pod or StatefulSet.
  */
-export async function deleteEnvoyConfigMap(podName: string): Promise<void> {
-  const namespace = process.env.OPTIO_NAMESPACE ?? "optio";
-  const configMapName = `envoy-config-${podName}`;
-
+export async function deleteEnvoyConfigMap(ownerName: string): Promise<void> {
+  const configMapName = `envoy-config-${ownerName}`;
   try {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execFileAsync = promisify(execFile);
-    await execFileAsync("kubectl", [
-      "delete",
-      "configmap",
-      configMapName,
-      "-n",
-      namespace,
-      "--ignore-not-found",
-    ]);
-    logger.info({ configMapName, podName }, "Deleted Envoy ConfigMap");
+    await getWorkloadManager().deleteObject("v1", "ConfigMap", configMapName);
+    logger.info({ configMapName }, "Deleted Envoy ConfigMap");
   } catch (err) {
     logger.warn({ err, configMapName }, "Failed to delete Envoy ConfigMap");
   }

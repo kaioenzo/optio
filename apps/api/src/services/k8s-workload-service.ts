@@ -33,6 +33,7 @@ import {
   V1VolumeResourceRequirements,
   KubernetesObjectApi,
   PatchStrategy,
+  type KubernetesObject,
 } from "@kubernetes/client-node";
 import type { ContainerSpec } from "@optio/shared";
 import { parseIntEnv } from "@optio/shared";
@@ -815,6 +816,46 @@ export class K8sWorkloadManager {
     throw new Error(
       `Timed out waiting for Job "${jobName}" pod to be Running after ${timeoutMs / 1000}s`,
     );
+  }
+
+  async applyObject(obj: KubernetesObject): Promise<void> {
+    const spec = { ...obj, metadata: { ...obj.metadata, namespace: this.namespace } };
+    try {
+      await this.objectApi.create(spec);
+    } catch (err: unknown) {
+      if (!this.isConflictError(err)) throw err;
+      await this.objectApi.patch(
+        spec,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        PatchStrategy.MergePatch,
+      );
+    }
+  }
+
+  async createObjectIfMissing(obj: KubernetesObject): Promise<void> {
+    try {
+      await this.objectApi.create({
+        ...obj,
+        metadata: { ...obj.metadata, namespace: this.namespace },
+      });
+    } catch (err: unknown) {
+      if (!this.isConflictError(err)) throw err;
+    }
+  }
+
+  async deleteObject(apiVersion: string, kind: string, name: string): Promise<void> {
+    try {
+      await this.objectApi.delete({
+        apiVersion,
+        kind,
+        metadata: { name, namespace: this.namespace },
+      });
+    } catch (err: unknown) {
+      if (!this.isNotFoundError(err)) throw err;
+    }
   }
 
   private isNotFoundError(err: unknown): boolean {
