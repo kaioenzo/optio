@@ -1,7 +1,7 @@
 import { shellQuote } from "@optio/shared";
 import { OPENCODE_AUTO_APPROVE_FLAG, opencodeHeadlessEnabled } from "@optio/agent-adapters";
 import { piCommand } from "../utils/pi-command.js";
-import { EXPORT_CODEX_HOME } from "../utils/codex-config.js";
+import { EXPORT_CODEX_HOME, LINK_CODEX_CHATGPT_LOGIN } from "../utils/codex-config.js";
 import {
   copilotMcpConfigFlag,
   EXPORT_GEMINI_HOME,
@@ -77,6 +77,7 @@ export function buildPooledAgentCommand(
       return [
         `echo "[optio] Running ${label} (Codex)..."`,
         ...EXPORT_CODEX_HOME,
+        ...LINK_CODEX_CHATGPT_LOGIN,
         // The pod is the sandbox; `--full-auto` is gone from recent Codex
         // releases. Codex reads a non-TTY stdin to EOF before its first model
         // call, and the run's stdin stays open for messages: give it none.

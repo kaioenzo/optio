@@ -42,9 +42,9 @@ export class CodexAdapter implements AgentAdapter {
     codexAuthMode?: CodexAuthMode,
   ): { valid: boolean; missing: string[] } {
     const required: string[] = [];
-    // In app-server mode, no OpenAI API key is needed — the CLI connects to
-    // a local app-server endpoint that handles auth via the user's ChatGPT plan.
-    if (codexAuthMode !== "app-server") {
+    // In app-server and chatgpt modes no OpenAI API key is needed: the CLI
+    // signs in through the user's ChatGPT plan.
+    if (codexAuthMode !== "app-server" && codexAuthMode !== "chatgpt") {
       required.push("OPENAI_API_KEY");
     }
     const missing = required.filter((s) => !availableSecrets.includes(s));
@@ -78,6 +78,8 @@ export class CodexAdapter implements AgentAdapter {
       if (input.codexProviderConfig?.length) {
         env.OPTIO_CODEX_PROVIDER_CONFIG = JSON.stringify(input.codexProviderConfig);
       }
+    } else if (input.codexAuthMode === "chatgpt") {
+      env.OPTIO_CODEX_AUTH_MODE = "chatgpt";
     } else if (input.codexAuthMode === "app-server") {
       env.OPTIO_CODEX_AUTH_MODE = "app-server";
       if (input.codexAppServerUrl) {

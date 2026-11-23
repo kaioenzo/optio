@@ -191,6 +191,17 @@ describe("buildAgentCommand", () => {
       expect(cmds.some((c) => c.includes("(app-server)"))).toBe(true);
     });
 
+    it("links the pod's ChatGPT sign-in before codex exec", () => {
+      const cmds = buildAgentCommand("codex", {
+        OPTIO_PROMPT: "Build feature",
+        OPTIO_CODEX_AUTH_MODE: "chatgpt",
+      });
+      const link = cmds.findIndex((c) => c.includes("ln -sf"));
+      expect(link).toBeGreaterThan(-1);
+      expect(link).toBeLessThan(cmds.findIndex((c) => c.startsWith("codex exec")));
+      expect(cmds.some((c) => c.includes("--app-server"))).toBe(false);
+    });
+
     it("does not include --app-server flag when auth mode is app-server but URL is missing", () => {
       const env = { OPTIO_PROMPT: "Build feature", OPTIO_CODEX_AUTH_MODE: "app-server" };
       const cmds = buildAgentCommand("codex", env);

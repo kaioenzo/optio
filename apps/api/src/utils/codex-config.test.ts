@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WRITE_SETUP_FILES } from "./pod-env.js";
-import { codexMcpConfigToml, EXPORT_CODEX_HOME, tomlKey, tomlString } from "./codex-config.js";
+import {
+  codexMcpConfigToml,
+  EXPORT_CODEX_HOME,
+  LINK_CODEX_CHATGPT_LOGIN,
+  tomlKey,
+  tomlString,
+} from "./codex-config.js";
 import { runHome } from "./harness-config.js";
 
 describe("codexMcpConfigToml", () => {
@@ -96,6 +102,51 @@ describe("EXPORT_CODEX_HOME", () => {
       expect(readFileSync(written, "utf8")).toBe('command = "x"\n');
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("LINK_CODEX_CHATGPT_LOGIN", () => {
+  const run = (home: string, env: Record<string, string>) =>
+    execFileSync(
+      "bash",
+      ["-c", [...EXPORT_CODEX_HOME, ...LINK_CODEX_CHATGPT_LOGIN, "echo done"].join("\n")],
+      {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH ?? "", HOME: home, ...env },
+      },
+    );
+
+  it("links the run's auth.json to the pod's ChatGPT sign-in", () => {
+    const home = mkdtempSync(join(tmpdir(), "codex-chatgpt-"));
+    try {
+      mkdirSync(join(home, ".codex-chatgpt"));
+      writeFileSync(join(home, ".codex-chatgpt", "auth.json"), "{}");
+      const runHomeDir = join(home, "optio", "codex", "run1");
+      run(home, { OPTIO_CODEX_AUTH_MODE: "chatgpt", OPTIO_CODEX_HOME: runHomeDir });
+      expect(readlinkSync(join(runHomeDir, "auth.json"))).toBe(
+        join(home, ".codex-chatgpt", "auth.json"),
+      );
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("stops the run when the pod has no ChatGPT sign-in", () => {
+    const home = mkdtempSync(join(tmpdir(), "codex-chatgpt-"));
+    try {
+      expect(() => run(home, { OPTIO_CODEX_AUTH_MODE: "chatgpt" })).toThrow();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("does nothing in other auth modes", () => {
+    const home = mkdtempSync(join(tmpdir(), "codex-chatgpt-"));
+    try {
+      expect(run(home, { OPTIO_CODEX_AUTH_MODE: "api-key" }).trim()).toBe("done");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
     }
   });
 });

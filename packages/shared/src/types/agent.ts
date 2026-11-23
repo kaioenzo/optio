@@ -1,5 +1,5 @@
 export type ClaudeAuthMode = "api-key" | "max-subscription" | "vertex-ai" | "bedrock";
-export type CodexAuthMode = "api-key" | "app-server" | "bedrock";
+export type CodexAuthMode = "api-key" | "app-server" | "bedrock" | "chatgpt";
 export type CopilotAuthMode = "github-token";
 export type GeminiAuthMode = "api-key" | "vertex-ai";
 export type OpenClawAuthMode = "api-key";

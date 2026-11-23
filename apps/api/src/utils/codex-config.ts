@@ -23,6 +23,21 @@ export const EXPORT_CODEX_HOME: readonly string[] = [
   `if [ -n "\${${OPTIO_CODEX_HOME}:-}" ]; then export CODEX_HOME="\$${OPTIO_CODEX_HOME}"; fi`,
 ];
 
+/**
+ * Where a ChatGPT sign-in lives on the pod's persistent home, made once with
+ * `CODEX_HOME=$HOME/.codex-chatgpt codex login --device-auth`. Every run's own
+ * `CODEX_HOME` links its `auth.json` there, so token refreshes land in one file.
+ */
+export const CODEX_CHATGPT_HOME = "$HOME/.codex-chatgpt";
+
+/** Script lines that, in `chatgpt` auth mode, point the run at the pod's ChatGPT sign-in. */
+export const LINK_CODEX_CHATGPT_LOGIN: readonly string[] = [
+  `if [ "\${OPTIO_CODEX_AUTH_MODE:-}" = "chatgpt" ]; then`,
+  `  if [ ! -s "${CODEX_CHATGPT_HOME}/auth.json" ]; then echo "[optio] Codex chatgpt mode: no sign-in at ${CODEX_CHATGPT_HOME}/auth.json" >&2; exit 1; fi`,
+  `  mkdir -p "\${CODEX_HOME:-$HOME/.codex}" && ln -sf "${CODEX_CHATGPT_HOME}/auth.json" "\${CODEX_HOME:-$HOME/.codex}/auth.json"`,
+  `fi`,
+];
+
 /** A TOML basic string: quoted, with quotes, backslashes, and control characters escaped. */
 export function tomlString(value: string): string {
   let out = '"';

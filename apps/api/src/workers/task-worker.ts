@@ -93,7 +93,7 @@ import {
   buildAgentEnvironment,
   connectionShellEnv,
 } from "../services/agent-environment-service.js";
-import { EXPORT_CODEX_HOME } from "../utils/codex-config.js";
+import { EXPORT_CODEX_HOME, LINK_CODEX_CHATGPT_LOGIN } from "../utils/codex-config.js";
 import {
   copilotMcpConfigFlag,
   EXPORT_GEMINI_HOME,
@@ -1679,6 +1679,7 @@ export function buildAgentCommand(
       return [
         `echo "[optio] Running OpenAI Codex${appServerFlag ? " (app-server)" : ""}..."`,
         ...EXPORT_CODEX_HOME,
+        ...LINK_CODEX_CHATGPT_LOGIN,
         // The pod is the sandbox; `--full-auto` is gone from recent Codex
         // releases. Codex reads a non-TTY stdin to EOF before its first model
         // call, and the run's stdin stays open for messages: give it none.
