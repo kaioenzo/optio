@@ -234,18 +234,7 @@ function parseAntigravityEvent(
     if (typeof body.text_delta === "string" && body.text_delta.trim()) {
       entries.push(entry("text", body.text_delta));
     }
-    if (body.tool_info) {
-      const info = body.tool_info;
-      const name = info.name ?? info.tool_name ?? body.step_type ?? "tool";
-      const args = parseArgs(info.arguments ?? info.args ?? info.input);
-      const raw = JSON.stringify(info);
-      entries.push(
-        entry("tool_use", args ? formatGeminiToolUse(name, args) : raw.slice(0, 300), {
-          toolName: name,
-          toolInput: args,
-        }),
-      );
-    }
+    if (body.tool_info) entries.push(antigravityToolEntry(body.tool_info, body.step_type, entry));
     return { entries, sessionId };
   }
 
@@ -278,6 +267,40 @@ function parseAntigravityEvent(
   return { entries: [], sessionId };
 }
 
+/**
+ * agy reports each tool twice: `{name, parameters}` when it starts and the same
+ * with `output` when it ends. The plan tool (`update_steps`) becomes one line.
+ */
+function antigravityToolEntry(
+  info: any,
+  stepType: string | undefined,
+  entry: (
+    type: AgentLogEntry["type"],
+    content: string,
+    metadata?: AgentLogEntry["metadata"],
+  ) => AgentLogEntry,
+): AgentLogEntry {
+  const name: string = info.name ?? info.tool_name ?? stepType ?? "tool";
+  const args = parseArgs(info.parameters ?? info.arguments ?? info.args ?? info.input);
+  if (name === "update_steps" && Array.isArray(args?.steps)) {
+    const steps = (args.steps as { title?: string; status?: string }[])
+      .map((step) => `${step.title ?? "?"} (${step.status ?? "?"})`)
+      .join(" · ");
+    return entry("info", `Plan: ${steps}`);
+  }
+  if (info.output !== undefined) {
+    const output = typeof info.output === "string" ? info.output : JSON.stringify(info.output);
+    return entry("tool_result", output.length > 300 ? output.slice(0, 300) + "\u2026" : output, {
+      toolName: name,
+    });
+  }
+  return entry(
+    "tool_use",
+    args ? formatGeminiToolUse(name, args) : JSON.stringify(info).slice(0, 300),
+    { toolName: name, toolInput: args },
+  );
+}
+
 /** Parse tool call arguments (may be a JSON string or object) */
 function parseArgs(args: unknown): Record<string, unknown> | undefined {
   if (!args) return undefined;
@@ -293,16 +316,19 @@ function parseArgs(args: unknown): Record<string, unknown> | undefined {
 }
 
 /** Format a Gemini tool use into a concise human-readable string */
-function formatGeminiToolUse(name: string, args: Record<string, unknown> | undefined): string {
+function formatGeminiToolUse(name: string, raw: Record<string, unknown> | undefined): string {
   if (!name) return "unknown tool";
-  if (!args) return name;
+  if (!raw) return name;
+  // agy names its arguments in PascalCase (Path, CommandLine).
+  const args = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k.toLowerCase(), v]));
 
   switch (name) {
     case "shell":
     case "bash":
     case "terminal":
     case "run_terminal_command":
-      return `$ ${String(args.command ?? args.cmd ?? "")
+    case "run_command":
+      return `$ ${String(args.command ?? args.commandline ?? args.cmd ?? "")
         .split("\n")[0]
         .slice(0, 120)}`;
     case "read_file":

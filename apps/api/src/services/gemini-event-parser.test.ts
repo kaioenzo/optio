@@ -253,6 +253,56 @@ describe("parseGeminiEvent", () => {
       expect(result.entries[0].content).toContain("README.md");
     });
 
+    it("reads agy's PascalCase tool parameters", () => {
+      const run = parseGeminiEvent(
+        agy("step_update", {
+          tool_info: { name: "run_command", parameters: { CommandLine: "glab mr list --all" } },
+        }),
+        TASK_ID,
+      );
+      const read = parseGeminiEvent(
+        agy("step_update", {
+          tool_info: {
+            name: "read_file",
+            parameters: { Path: "/workspace/README.md", StartLine: 1 },
+          },
+        }),
+        TASK_ID,
+      );
+      expect(run.entries[0].content).toBe("$ glab mr list --all");
+      expect(read.entries[0].content).toBe("Read /workspace/README.md");
+    });
+
+    it("logs a finished tool as its result, not a second call", () => {
+      const result = parseGeminiEvent(
+        agy("step_update", {
+          tool_info: {
+            name: "read_file",
+            parameters: { Path: "README.md" },
+            output: "168 lines, 9342 bytes",
+          },
+        }),
+        TASK_ID,
+      );
+      expect(result.entries.map((e) => [e.type, e.content])).toEqual([
+        ["tool_result", "168 lines, 9342 bytes"],
+      ]);
+    });
+
+    it("turns the plan tool into one line", () => {
+      const steps = [
+        { status: "done", title: "Check MR and read task" },
+        { status: "skipped", title: "Open Merge Request" },
+      ];
+      const result = parseGeminiEvent(
+        agy("step_update", { tool_info: { name: "update_steps", parameters: { steps } } }),
+        TASK_ID,
+      );
+      expect(result.entries.map((e) => [e.type, e.content])).toEqual([
+        ["info", "Plan: Check MR and read task (done) · Open Merge Request (skipped)"],
+      ]);
+    });
+
     it("skips empty step updates but still reports the session", () => {
       const result = parseGeminiEvent(
         agy("step_update", { step_type: "planning", state: "RUNNING", text_delta: "  " }),
