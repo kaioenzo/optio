@@ -114,6 +114,7 @@ vi.mock("./repo-pool-service.js", () => ({
 }));
 
 import {
+  CODEX_CHATGPT_JOBS_PVC,
   getOrCreateWorkflowPod,
   startRunInPod,
   cleanupIdleWorkflowPods,
@@ -348,6 +349,32 @@ describe("getOrCreateWorkflowPod", () => {
 });
 
 // ── startRunInPod ───────────────────────────────────────────────────
+
+describe("getOrCreateWorkflowPod with the Codex ChatGPT sign-in", () => {
+  it("mounts the Jobs' sign-in volume at the Codex ChatGPT home", async () => {
+    provisionNewPod();
+    mockRuntimeCreate.mockResolvedValueOnce({ id: "k8s-id", name: "optio-wf-wf1-0-abcd" });
+    await getOrCreateWorkflowPod("wf-1", { codexChatgptLogin: true });
+    expect(mockRuntimeCreate.mock.calls[0][0].volumes).toEqual([
+      { persistentVolumeClaim: CODEX_CHATGPT_JOBS_PVC, mountPath: "/home/agent/.codex-chatgpt" },
+    ]);
+  });
+
+  it("mounts nothing for other Jobs", async () => {
+    provisionNewPod();
+    mockRuntimeCreate.mockResolvedValueOnce({ id: "k8s-id", name: "optio-wf-wf1-0-abcd" });
+    await getOrCreateWorkflowPod("wf-1", { credentialProfile: ["x"] });
+    expect(mockRuntimeCreate.mock.calls[0][0].volumes).toBeUndefined();
+  });
+
+  it("never shares a pod between runs with and without the sign-in", async () => {
+    podPool.pickPod.mockResolvedValue(workflowPod());
+    await getOrCreateWorkflowPod("wf-1", { credentialProfile: ["x"] });
+    await getOrCreateWorkflowPod("wf-1", { credentialProfile: ["x"], codexChatgptLogin: true });
+    const [plain, signedIn] = podPool.pickPod.mock.calls.map((call) => call[2].isolationKey);
+    expect(plain).not.toBe(signedIn);
+  });
+});
 
 describe("startRunInPod", () => {
   it("takes a slot and starts the run under the protocol in its run home", async () => {
