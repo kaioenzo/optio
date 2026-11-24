@@ -379,10 +379,11 @@ const MIGRATED_ROUTES: MigratedRoute[] = [
   { method: "get", path: "/api/cluster/version" },
   { method: "post", path: "/api/cluster/update" },
 
-  // Phase 8 — auth & GitHub (15 visible routes; 4 hidden)
-  // auth.ts (11 visible of 13 — claude-token is text/plain + hidden, login/callback are 302 + hidden)
+  // Phase 8 — auth & GitHub (16 visible routes; 4 hidden)
+  // auth.ts (12 visible of 14 — claude-token is text/plain + hidden, login/callback are 302 + hidden)
   { method: "get", path: "/api/auth/status" },
   { method: "get", path: "/api/auth/usage" },
+  { method: "get", path: "/api/auth/codex-usage" },
   { method: "post", path: "/api/auth/refresh" },
   { method: "get", path: "/api/auth/providers" },
   { method: "post", path: "/api/auth/exchange-code" },
@@ -445,8 +446,8 @@ describe("OpenAPI spec — migrated routes are fully documented", () => {
     // pickable-secrets route, 4 model-provider routes and 2 work-defaults
     // routes → 178. Then the two task PR routes (attach / stop tracking) → 180.
     // Then the Work resource (list, create, get, save, delete, runs,
-    // triggers ×4) → 190.
-    expect(MIGRATED_ROUTES).toHaveLength(190);
+    // triggers ×4) → 190. Then the Codex usage route → 191.
+    expect(MIGRATED_ROUTES).toHaveLength(191);
   });
 
   it("components.schemas contains the Task domain types", () => {

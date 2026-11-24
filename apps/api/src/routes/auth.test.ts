@@ -34,6 +34,9 @@ const mockInvalidateCredentialsCache = vi.fn();
 const mockInvalidateUsageCache = vi.fn();
 const mockListEnabledProviders = vi.fn().mockResolvedValue([]);
 let mockDomainDecision = "allowed";
+vi.mock("../services/codex-usage-service.js", () => ({
+  getCodexUsage: async (repoUrl: string) => ({ available: true, repoUrl }),
+}));
 vi.mock("../services/auth-service.js", () => ({
   getClaudeAuthToken: () => mockGetClaudeAuthToken(),
   getClaudeUsage: async () => ({ available: false }),
@@ -1195,6 +1198,16 @@ describe("remaining sign-in and credential access boundaries", () => {
       (await app.inject({ url: "/api/auth/usage?fresh=1" })).json().usage.authFailures,
     ).toEqual({ claude: false, github: false });
     expect(mockInvalidateUsageCache).toHaveBeenCalledTimes(1);
+  });
+  it("reads the Codex usage of the given repo and rejects a missing repoUrl", async () => {
+    const url = encodeURIComponent("https://gitlab.com/kaioenzo/e-apa");
+    expect(
+      (await app.inject({ url: `/api/auth/codex-usage?repoUrl=${url}` })).json().usage,
+    ).toEqual({
+      available: true,
+      repoUrl: "https://gitlab.com/kaioenzo/e-apa",
+    });
+    expect((await app.inject({ url: "/api/auth/codex-usage" })).statusCode).toBe(400);
   });
   it("only sends a plaintext token to a deployment administrator", async () => {
     mockGetClaudeAuthToken.mockReturnValueOnce({ available: true, token: "protected-token" });

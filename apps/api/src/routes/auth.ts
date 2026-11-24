@@ -15,6 +15,7 @@ import {
   invalidateUsageCache,
 } from "../services/auth-service.js";
 import { getRecentAuthFailures } from "../services/auth-failure-detector.js";
+import { getCodexUsage } from "../services/codex-usage-service.js";
 import { getOAuthProvider, listEnabledProviders, isAuthDisabled } from "../services/oauth/index.js";
 import {
   SIGN_IN_PROVIDERS,
@@ -505,6 +506,26 @@ export async function authRoutes(rawApp: FastifyInstance) {
       // hasRecentAuthFailure kept for backward compat (true if either token type has failures)
       const hasRecentAuthFailure = authFailures.claude || authFailures.github;
       reply.send({ usage: { ...usage, hasRecentAuthFailure, authFailures } });
+    },
+  );
+
+  app.get(
+    "/api/auth/codex-usage",
+    {
+      schema: {
+        operationId: "getCodexUsage",
+        summary: "Get the Codex ChatGPT login's rate limits",
+        description:
+          "Return the 5-hour and 7-day usage of the ChatGPT login kept in the repo pod " +
+          "(`CODEX_AUTH_MODE=chatgpt`), read through `codex app-server` without running a model. " +
+          "Good reads are cached for 5 minutes.",
+        tags: ["Auth & Sessions"],
+        querystring: z.object({ repoUrl: z.string().url() }),
+        response: { 200: AuthUsageResponseSchema },
+      },
+    },
+    async (req, reply) => {
+      reply.send({ usage: await getCodexUsage(req.query.repoUrl) });
     },
   );
 
