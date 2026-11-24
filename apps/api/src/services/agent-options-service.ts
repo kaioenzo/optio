@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  GEMINI_ANTIGRAVITY_CATALOG,
   PROVIDER_CATALOGS,
   mergeCodexModels,
   mergeLiveModels,
@@ -14,7 +15,7 @@ import {
 import { getRedisClient } from "./event-bus.js";
 import { redisDeleteKeys, redisScanKeys } from "./redis-config.js";
 import { codexModelsFor } from "./local-host-service.js";
-import { retrieveSecret } from "./secret-service.js";
+import { retrieveSecret, retrieveSecretWithFallback } from "./secret-service.js";
 
 /** Cache TTL for live-probed model lists. ~1h matches the task spec. */
 const CACHE_TTL_SECONDS = 60 * 60;
@@ -292,6 +293,14 @@ export async function getProviderOptions(
   provider: AgentProviderId,
   opts: GetOptions = {},
 ): Promise<ProviderOptionsResult> {
+  if (provider === "gemini" && (await geminiAuthMode(opts.workspaceId)) === "google-login") {
+    return {
+      catalog: GEMINI_ANTIGRAVITY_CATALOG,
+      source: "baseline",
+      cached: false,
+      refreshedAt: null,
+    };
+  }
   const result = await probeProviderOptions(provider, opts);
   if (provider !== "openai" || !opts.machines) return result;
   const found = await codexModelsFor(opts.machines.userId, opts.machines.hostId).catch(() => null);
@@ -313,6 +322,10 @@ export async function getProviderOptions(
     refreshedAt: Math.max(result.refreshedAt ?? 0, fetchedAt) || null,
     liveFrom: `Codex on ${found.host.name}`,
   };
+}
+
+async function geminiAuthMode(workspaceId: string | null | undefined): Promise<string | null> {
+  return retrieveSecretWithFallback("GEMINI_AUTH_MODE", "global", workspaceId).catch(() => null);
 }
 
 async function probeProviderOptions(

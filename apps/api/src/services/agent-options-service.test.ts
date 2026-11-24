@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockRetrieveSecret = vi.fn();
+const mockRetrieveSecretWithFallback = vi.fn();
 const mockRedisGet = vi.fn();
 const mockRedisSet = vi.fn();
 const mockRedisDel = vi.fn();
 
 vi.mock("./secret-service.js", () => ({
   retrieveSecret: (...args: unknown[]) => mockRetrieveSecret(...args),
+  retrieveSecretWithFallback: (...args: unknown[]) => mockRetrieveSecretWithFallback(...args),
 }));
 
 vi.mock("./event-bus.js", () => ({
@@ -41,6 +43,8 @@ const originalFetch = globalThis.fetch;
 describe("getProviderOptions", () => {
   beforeEach(() => {
     mockRetrieveSecret.mockReset();
+    mockRetrieveSecretWithFallback.mockReset();
+    mockRetrieveSecretWithFallback.mockRejectedValue(new Error("Secret not found"));
     mockRedisGet.mockReset();
     mockRedisSet.mockReset();
     mockRedisDel.mockReset();
@@ -246,6 +250,20 @@ describe("getProviderOptions", () => {
     // already in the baseline — not duplicated
     const geminiThreeProEntries = result.catalog.models.filter((m) => m.id === "gemini-3-pro");
     expect(geminiThreeProEntries.length).toBe(1);
+  });
+
+  it("offers Antigravity's models, not Gemini CLI's, in google-login mode", async () => {
+    mockRetrieveSecretWithFallback.mockResolvedValue("google-login");
+    const result = await getProviderOptions("gemini", { workspaceId: "ws-1" });
+    expect(mockRetrieveSecretWithFallback).toHaveBeenCalledWith(
+      "GEMINI_AUTH_MODE",
+      "global",
+      "ws-1",
+    );
+    expect(result.catalog.models.some((m) => m.id === "gemini-3.8-flash-medium")).toBe(true);
+    expect(result.catalog.models.some((m) => m.id === "gemini-2.5-pro")).toBe(false);
+    expect(result.catalog.options).toEqual([]);
+    expect(mockRetrieveSecret).not.toHaveBeenCalled();
   });
 });
 
