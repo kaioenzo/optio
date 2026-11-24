@@ -357,6 +357,10 @@ export function startWorkflowWorker() {
           cpuLimit: envSpec?.cpuLimit ?? null,
           memoryRequest: envSpec?.memoryRequest ?? null,
           memoryLimit: envSpec?.memoryLimit ?? null,
+          codexChatgptLogin:
+            !command &&
+            workflow.agentRuntime === "codex" &&
+            env.OPTIO_CODEX_AUTH_MODE === "chatgpt",
         });
 
         // Record the assigned pod on the run so reconcile/zombie code can find

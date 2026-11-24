@@ -111,4 +111,19 @@ describe("pooledProviderSecrets with a picked credential", () => {
     );
     expect(resolve).toHaveBeenCalledWith([]);
   });
+
+  it("lets Codex's chatgpt mode run without an OpenAI key", async () => {
+    const resolve = vi.fn(async (names: string[]) =>
+      Object.fromEntries(names.map((n) => [n, "v"])),
+    );
+    await pooledProviderSecrets(
+      getAdapter("codex"),
+      { agentRuntime: "codex", agentOptions: null },
+      stored({}),
+      resolve,
+      null,
+      "chatgpt",
+    );
+    expect(resolve).toHaveBeenCalledWith([]);
+  });
 });

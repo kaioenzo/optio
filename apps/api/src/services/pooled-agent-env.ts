@@ -51,9 +51,15 @@ export async function pooledAgentEnv(
   const credential = picked ? credentialRuntime(agent.agentRuntime, picked) : null;
   const secret = (name: string) =>
     retrieveSecretWithFallback(name, "global", workspaceId, ownerUserId).catch(() => null);
+  // A mode pasted with a trailing newline would silently fall back to api-key.
+  const mode = async (name: string) => (await secret(name))?.trim() || undefined;
   const geminiAuthMode =
     agent.agentRuntime === "gemini" && !providerRuntime
-      ? (credential?.geminiAuthMode ?? (await secret("GEMINI_AUTH_MODE")) ?? undefined)
+      ? (credential?.geminiAuthMode ?? (await mode("GEMINI_AUTH_MODE")))
+      : undefined;
+  const codexAuthMode =
+    agent.agentRuntime === "codex" && !providerRuntime
+      ? (credential?.codexAuthMode ?? (await mode("CODEX_AUTH_MODE")))
       : undefined;
   const resolvedSecrets = providerRuntime
     ? {}
@@ -63,11 +69,11 @@ export async function pooledAgentEnv(
         secret,
         (names) => resolveSecretsForTask(names, "", workspaceId, ownerUserId),
         credential,
-        geminiAuthMode,
+        geminiAuthMode ?? codexAuthMode,
       );
   const claudeAuthMode = providerRuntime
     ? "bedrock"
-    : (credential?.claudeAuthMode ?? (await secret("CLAUDE_AUTH_MODE")) ?? "api-key");
+    : (credential?.claudeAuthMode ?? (await mode("CLAUDE_AUTH_MODE")) ?? "api-key");
 
   const env: Record<string, string> = {
     ...resolvedSecrets,
@@ -79,6 +85,7 @@ export async function pooledAgentEnv(
     OPTIO_AGENT_TYPE: agent.agentRuntime,
     OPTIO_AUTH_MODE: claudeAuthMode,
     ...(geminiAuthMode ? { OPTIO_GEMINI_AUTH_MODE: geminiAuthMode } : {}),
+    ...(codexAuthMode ? { OPTIO_CODEX_AUTH_MODE: codexAuthMode } : {}),
     // `model` is the legacy field.
     ...agentOptionsEnv(agent.agentRuntime, agent.agentOptions, agent.model),
   };
@@ -130,18 +137,18 @@ export async function pooledProviderSecrets(
   secret: (name: string) => Promise<string | null>,
   resolveRequired: (names: string[]) => Promise<Record<string, string>>,
   credential: CredentialRuntime | null = null,
-  geminiAuthMode?: string,
+  authMode?: string,
 ): Promise<Record<string, string>> {
   if (agent.agentRuntime === "pi") return piProviderSecrets(secret, credential);
   if (agent.agentRuntime === "opencode") {
     const baseUrl = agent.agentOptions?.opencodeBaseUrl;
     return opencodeProviderSecrets(secret, typeof baseUrl === "string" ? baseUrl : null);
   }
-  // A picked credential supplies its own secret (and Codex's app-server or
-  // Gemini's Vertex and google-login modes need no key): don't require what
-  // it provides.
+  // A picked credential supplies its own secret (and Codex's app-server and
+  // chatgpt modes or Gemini's Vertex and google-login modes need no key):
+  // don't require what it provides.
   const missing = adapter
-    .validateSecrets([], credential?.codexAuthMode ?? geminiAuthMode)
+    .validateSecrets([], credential?.codexAuthMode ?? authMode)
     .missing.filter((name) => !(credential && name in credential.env));
   return resolveRequired(missing);
 }

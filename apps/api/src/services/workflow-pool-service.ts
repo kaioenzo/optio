@@ -38,15 +38,35 @@ export interface GetOrCreateOpts {
   cpuLimit?: string | null;
   memoryRequest?: string | null;
   memoryLimit?: string | null;
+  /** A Codex Job in chatgpt mode: mount the Jobs' ChatGPT sign-in volume. */
+  codexChatgptLogin?: boolean;
 }
 
 /** Pick (or create) a pod for a run of `workflowId` — see agent-pod-pool's pickPod. */
+/**
+ * The PVC holding the Codex ChatGPT sign-in for Jobs (`codex login
+ * --device-auth` with `CODEX_HOME=$HOME/.codex-chatgpt`, once). Job pods are
+ * disposable, so the sign-in lives on its own volume, separate from the repo
+ * pods' so the two logins never race on the same refresh token.
+ */
+export const CODEX_CHATGPT_JOBS_PVC = "optio-codex-chatgpt-jobs";
+const CODEX_CHATGPT_HOME = "/home/agent/.codex-chatgpt";
+
+/** A pod without the sign-in volume must not serve a run that needs it. */
+function isolationKeyOf(opts: GetOrCreateOpts): string {
+  return podIsolationKey(
+    opts.codexChatgptLogin
+      ? { ...opts, credentialProfile: [opts.credentialProfile ?? null, "codex-chatgpt"] }
+      : opts,
+  );
+}
+
 export async function getOrCreateWorkflowPod(
   workflowId: string,
   opts: GetOrCreateOpts = {},
 ): Promise<WorkflowPod> {
   return podPool.pickPod("standalone", workflowId, {
-    isolationKey: podIsolationKey(opts),
+    isolationKey: isolationKeyOf(opts),
     preferredPodId: opts.preferredPodId,
     maxAgentsPerPod: opts.maxAgentsPerPod ?? 2,
     maxPodInstances: opts.maxPodInstances ?? 1,
@@ -90,6 +110,9 @@ function podSpec(
     cpuLimit: opts.cpuLimit ?? undefined,
     memoryRequest: opts.memoryRequest ?? undefined,
     memoryLimit: opts.memoryLimit ?? undefined,
+    ...(opts.codexChatgptLogin && {
+      volumes: [{ persistentVolumeClaim: CODEX_CHATGPT_JOBS_PVC, mountPath: CODEX_CHATGPT_HOME }],
+    }),
     labels: {
       "optio.workflow-id": workflowId.slice(0, 63),
       "optio.instance-index": String(instanceIndex),
@@ -107,7 +130,7 @@ async function createWorkflowPod(
   const record = await podPool.insertPod({
     pool: "standalone",
     poolKey: workflowId,
-    isolationKey: podIsolationKey(opts),
+    isolationKey: isolationKeyOf(opts),
     instanceIndex,
     workspaceId: opts.workspaceId ?? undefined,
   });
@@ -139,11 +162,11 @@ async function createWorkflowPodViaJob(
   instanceIndex: number,
   opts: GetOrCreateOpts,
 ): Promise<WorkflowPod> {
-  const jobName = `${isolatedPodResource("optio-wf", workflowId, podIsolationKey(opts))}-${instanceIndex}`;
+  const jobName = `${isolatedPodResource("optio-wf", workflowId, isolationKeyOf(opts))}-${instanceIndex}`;
   const record = await podPool.insertPod({
     pool: "standalone",
     poolKey: workflowId,
-    isolationKey: podIsolationKey(opts),
+    isolationKey: isolationKeyOf(opts),
     instanceIndex,
     workspaceId: opts.workspaceId ?? undefined,
     jobName,

@@ -120,3 +120,19 @@ provider's `trustEmail`). A first-time user's default workspace becomes the firs
 so no empty personal workspace is created. A workspace admin may list their own email's domain
 only when that email is verified (`users.email_verified`); any other domain takes a deployment
 admin.
+
+## Codex ChatGPT sign-in in pods
+
+With `CODEX_AUTH_MODE=chatgpt`, Codex runs on a ChatGPT login instead of an OpenAI key. Each run links
+`$CODEX_HOME/auth.json` to `$HOME/.codex-chatgpt/auth.json`, so token refreshes land in one file, and
+fails at once when that file is missing.
+
+- **Repo Tasks:** the login lives in the repo pod's home volume. Sign in once in the pod with
+  `CODEX_HOME=$HOME/.codex-chatgpt codex login --device-auth`.
+- **Jobs:** Job pods are disposable, so a Codex Job in chatgpt mode mounts the PVC
+  `optio-codex-chatgpt-jobs` at `/home/agent/.codex-chatgpt` and runs in a pod of its own (a different
+  isolation key). Create the PVC once (ReadWriteOnce, ~10Mi), then sign in once with the same command
+  inside a Job pod. It is a separate login from the repo pods', so the two never refresh the same token.
+
+Auth mode secrets (`CLAUDE_AUTH_MODE`, `CODEX_AUTH_MODE`, `GEMINI_AUTH_MODE`) are trimmed before use in
+Jobs: a value saved with a trailing newline would otherwise fall back to an API key.
