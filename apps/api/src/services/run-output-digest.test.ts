@@ -47,6 +47,12 @@ describe("RunOutputDigest", () => {
     const codex = ['{"type":"message"}', '{"type":"error","message":"quota"}'].join("\n");
     expect(inferExitCode("codex", codex)).toBe(1);
     expect(inferExitCode("codex", '{"type":"message"}')).toBe(0);
+    const echoed = JSON.stringify({
+      type: "item.completed",
+      item: { type: "command_execution", aggregated_output: "OPENAI_API_KEY unauthorized quota" },
+    });
+    expect(inferExitCode("codex", echoed)).toBe(0);
+    expect(inferExitCode("codex", '{"type":"turn.failed","error":{"message":"quota"}}')).toBe(1);
     // Claude: the first result event decides; a raw fatal line only without one.
     expect(inferExitCode("claude-code", 'fatal: x\n{"type":"result","is_error":false}')).toBe(0);
     expect(inferExitCode("claude-code", "fatal: x")).toBe(1);

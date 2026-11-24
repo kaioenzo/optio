@@ -194,4 +194,113 @@ describe("parseCodexEvent", () => {
     const result = parseCodexEvent(line, TASK_ID);
     expect(result.entries).toHaveLength(0);
   });
+
+  it("takes the thread id of thread.started as the session", () => {
+    const line = JSON.stringify({ type: "thread.started", thread_id: "01a2-thread" });
+    const result = parseCodexEvent(line, TASK_ID);
+    expect(result.sessionId).toBe("01a2-thread");
+    expect(result.entries).toHaveLength(0);
+  });
+
+  it("parses an agent_message item as text", () => {
+    const line = JSON.stringify({
+      type: "item.completed",
+      item: { id: "item_0", type: "agent_message", text: "Vou ler o repositório." },
+    });
+    const result = parseCodexEvent(line, TASK_ID);
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].type).toBe("text");
+    expect(result.entries[0].content).toBe("Vou ler o repositório.");
+  });
+
+  it("parses a started command_execution as a tool use", () => {
+    const line = JSON.stringify({
+      type: "item.started",
+      item: {
+        id: "item_1",
+        type: "command_execution",
+        command: "/bin/bash -lc 'ls'",
+        status: "in_progress",
+      },
+    });
+    const result = parseCodexEvent(line, TASK_ID);
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].type).toBe("tool_use");
+    expect(result.entries[0].content).toBe("$ /bin/bash -lc 'ls'");
+    expect(result.entries[0].metadata?.toolUseId).toBe("item_1");
+  });
+
+  it("parses a completed command_execution as a result with its exit code", () => {
+    const line = JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "item_1",
+        type: "command_execution",
+        command: "false",
+        aggregated_output: "boom",
+        exit_code: 1,
+        status: "failed",
+      },
+    });
+    const result = parseCodexEvent(line, TASK_ID);
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].type).toBe("tool_result");
+    expect(result.entries[0].content).toBe("exit 1\nboom");
+  });
+
+  it("parses an mcp_tool_call item", () => {
+    const started = parseCodexEvent(
+      JSON.stringify({
+        type: "item.started",
+        item: {
+          id: "item_2",
+          type: "mcp_tool_call",
+          server: "graphify",
+          tool: "query_graph",
+          arguments: {},
+        },
+      }),
+      TASK_ID,
+    );
+    expect(started.entries[0].content).toBe("graphify__query_graph");
+    const done = parseCodexEvent(
+      JSON.stringify({
+        type: "item.completed",
+        item: {
+          id: "item_2",
+          type: "mcp_tool_call",
+          server: "graphify",
+          tool: "query_graph",
+          result: { content: "ok" },
+        },
+      }),
+      TASK_ID,
+    );
+    expect(done.entries[0].type).toBe("tool_result");
+  });
+
+  it("parses a completed file_change item", () => {
+    const line = JSON.stringify({
+      type: "item.completed",
+      item: { id: "item_3", type: "file_change", changes: [{ path: "a.java", kind: "update" }] },
+    });
+    const result = parseCodexEvent(line, TASK_ID);
+    expect(result.entries[0].content).toBe("Edit update a.java");
+  });
+
+  it("parses turn.failed as an error", () => {
+    const line = JSON.stringify({ type: "turn.failed", error: { message: "rate limited" } });
+    const result = parseCodexEvent(line, TASK_ID);
+    expect(result.entries[0].type).toBe("error");
+    expect(result.entries[0].content).toBe("rate limited");
+  });
+
+  it("reports the usage of turn.completed", () => {
+    const line = JSON.stringify({
+      type: "turn.completed",
+      usage: { input_tokens: 120, cached_input_tokens: 100, output_tokens: 5 },
+    });
+    const result = parseCodexEvent(line, TASK_ID);
+    expect(result.entries[0].content).toContain("120 input tokens");
+  });
 });

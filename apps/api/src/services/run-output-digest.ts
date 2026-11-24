@@ -104,6 +104,7 @@ export class ExitCodeInference {
       if (!this.flagged && CURSOR_FALLBACK(line)) this.flagged = true;
       return;
     }
+    if (this.kind === "codex" && CODEX_ITEM_EVENT.test(line)) return;
     if (!this.flagged && ERROR_SIGNALS[this.kind](line)) this.flagged = true;
   }
 
@@ -130,6 +131,8 @@ export class ExitCodeInference {
     return processExitCode;
   }
 }
+
+const CODEX_ITEM_EVENT = /^\s*\{\s*"type"\s*:\s*"item\./;
 
 const hasErrorEvent = (line: string) =>
   line.includes('"type":"error"') || line.includes('"type": "error"');

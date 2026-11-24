@@ -10,6 +10,11 @@ import type { AgentLogEntry } from "@optio/shared";
  * - { type: "error", message: "..." }
  * - Events with usage data (input_tokens, output_tokens)
  *
+ * Codex 0.160 and later speak thread events instead: `thread.started`,
+ * `turn.started`, `item.started` / `item.completed` (agent_message, reasoning,
+ * command_execution, mcp_tool_call, file_change, web_search, error),
+ * `turn.completed` with usage, and `turn.failed`.
+ *
  * Returns multiple entries per line when a message contains structured content.
  */
 export function parseCodexEvent(
@@ -168,6 +173,21 @@ export function parseCodexEvent(
     return { entries, sessionId };
   }
 
+  if (event.type === "thread.started") {
+    return { entries, sessionId: event.thread_id ?? sessionId };
+  }
+
+  if (event.type === "turn.failed") {
+    const msg = event.error?.message ?? JSON.stringify(event.error ?? event);
+    entries.push({ taskId, timestamp, sessionId, type: "error", content: msg });
+    return { entries, sessionId };
+  }
+
+  if ((event.type === "item.started" || event.type === "item.completed") && event.item) {
+    entries.push(...parseCodexItem(event.type === "item.completed", event.item, taskId, timestamp));
+    return { entries, sessionId };
+  }
+
   // Generic event with usage data (summary)
   if (event.usage || event.response?.usage) {
     const usage = event.usage ?? event.response.usage;
@@ -196,6 +216,72 @@ export function parseCodexEvent(
 
   // Unknown JSON event — skip
   return { entries: [], sessionId };
+}
+
+function parseCodexItem(
+  completed: boolean,
+  item: any,
+  taskId: string,
+  timestamp: string,
+): AgentLogEntry[] {
+  const entry = (
+    type: AgentLogEntry["type"],
+    content: string,
+    metadata?: Record<string, unknown>,
+  ): AgentLogEntry[] => (content.trim() ? [{ taskId, timestamp, type, content, metadata }] : []);
+
+  switch (item.type) {
+    case "agent_message":
+      return completed ? entry("text", String(item.text ?? "")) : [];
+    case "reasoning":
+      return completed ? entry("thinking", String(item.text ?? "")) : [];
+    case "command_execution": {
+      const command = String(item.command ?? "");
+      if (!completed) {
+        return entry("tool_use", formatCodexToolUse("shell", { command }), {
+          toolName: "shell",
+          toolInput: { command },
+          toolUseId: item.id,
+        });
+      }
+      const output = String(item.aggregated_output ?? "").trim();
+      const status = item.exit_code != null && item.exit_code !== 0 ? `exit ${item.exit_code}` : "";
+      return entry("tool_result", clip([status, output].filter(Boolean).join("\n") || "done"), {
+        toolUseId: item.id,
+      });
+    }
+    case "mcp_tool_call": {
+      const name = `${item.server ?? "mcp"}__${item.tool ?? ""}`;
+      if (!completed) {
+        return entry("tool_use", name, {
+          toolName: name,
+          toolInput: item.arguments,
+          toolUseId: item.id,
+        });
+      }
+      const text = item.error?.message ?? JSON.stringify(item.result?.content ?? item.result ?? "");
+      return entry("tool_result", clip(String(text)), { toolUseId: item.id });
+    }
+    case "file_change": {
+      if (!completed) return [];
+      const files = (item.changes ?? [])
+        .map((c: any) => `${c.kind ?? "edit"} ${c.path ?? ""}`.trim())
+        .join(", ");
+      return entry("tool_use", `Edit ${files}`, { toolName: "apply_patch", toolUseId: item.id });
+    }
+    case "web_search":
+      return completed
+        ? []
+        : entry("tool_use", `Search: ${item.query ?? ""}`, { toolUseId: item.id });
+    case "error":
+      return entry("error", String(item.message ?? ""));
+    default:
+      return [];
+  }
+}
+
+function clip(text: string): string {
+  return text.length > 300 ? text.slice(0, 300) + "…" : text;
 }
 
 /** Parse function call arguments (may be a JSON string or object) */
