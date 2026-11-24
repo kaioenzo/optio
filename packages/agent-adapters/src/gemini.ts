@@ -18,6 +18,13 @@ import { firstMatch, parseAllLines } from "./types.js";
  * - { type: "tool_result", call_id: "...", output: "..." }
  * - { type: "error", message: "..." }
  * - { type: "result", stats: { per-model usage } }
+ *
+ * In google-login mode the run is Antigravity CLI (`agy -p ... --output-format
+ * stream-json`), whose NDJSON lines carry `event` instead of `type`:
+ *
+ * - { event: "init", conversation_id, init: { cwd, tools, permission_mode, model? } }
+ * - { event: "step_update", step_update: { step_type, state, text_delta?, tool_info? } }
+ * - { event: "result", result: { status, response, error?, num_turns, usage } }
  */
 
 /** Known Gemini model pricing (USD per 1M tokens) */
@@ -38,8 +45,9 @@ export class GeminiAdapter implements AgentAdapter {
     geminiAuthMode?: GeminiAuthMode,
   ): { valid: boolean; missing: string[] } {
     const required: string[] = [];
-    // In vertex-ai mode, authentication is via ADC — no API key needed.
-    if (geminiAuthMode !== "vertex-ai") {
+    // Vertex AI signs in through ADC and google-login through the pod's
+    // Antigravity sign-in: neither needs an API key.
+    if (geminiAuthMode !== "vertex-ai" && geminiAuthMode !== "google-login") {
       // Accept either GEMINI_API_KEY or GOOGLE_API_KEY
       if (
         !availableSecrets.includes("GEMINI_API_KEY") &&
@@ -67,7 +75,9 @@ export class GeminiAdapter implements AgentAdapter {
 
     const requiredSecrets: string[] = [];
 
-    if (input.geminiAuthMode === "vertex-ai") {
+    if (input.geminiAuthMode === "google-login") {
+      env.OPTIO_GEMINI_AUTH_MODE = "google-login";
+    } else if (input.geminiAuthMode === "vertex-ai") {
       env.OPTIO_GEMINI_AUTH_MODE = "vertex-ai";
       env.GOOGLE_GENAI_USE_VERTEXAI = "true";
       if (input.googleCloudProject) {
@@ -93,6 +103,10 @@ export class GeminiAdapter implements AgentAdapter {
         path: input.taskFilePath,
         content: input.taskFileContent,
       });
+    }
+
+    if (input.geminiAuthMode === "google-login") {
+      return { env, requiredSecrets, setupFiles };
     }
 
     // Write Gemini settings file
@@ -201,6 +215,30 @@ export class GeminiAdapter implements AgentAdapter {
       if (event.model && !model) {
         model = event.model;
       }
+
+      if (event.event === "init") {
+        if (!model && typeof event.init?.model === "string") model = event.init.model;
+        return;
+      }
+
+      // Antigravity's result carries the run's cumulative usage; per-step
+      // usage would count the same tokens twice. Its input_tokens already
+      // include cache_read_tokens (total_tokens = input + output).
+      if (event.event === "result" && event.result) {
+        const r = event.result;
+        if (r.status && r.status !== "SUCCESS") {
+          hasError = true;
+          errorMessage = r.error || `Antigravity run ended with status ${r.status}`;
+        }
+        if (typeof r.response === "string" && r.response) lastAssistantMessage = r.response;
+        const u = r.usage;
+        if (u) {
+          if (typeof u.input_tokens === "number") totalInputTokens += u.input_tokens;
+          if (typeof u.output_tokens === "number") totalOutputTokens += u.output_tokens;
+        }
+        return;
+      }
+      if (event.event) return;
 
       // Error events: { type: "error", message: "..." }
       if (event.type === "error") {

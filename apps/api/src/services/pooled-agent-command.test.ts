@@ -50,6 +50,16 @@ describe("buildPooledAgentCommand — codex", () => {
 describe("buildPooledAgentCommand — each runtime's MCP config", () => {
   const home = "/home/agent/optio/runs/r1";
 
+  it("Gemini google-login runs Antigravity CLI instead of the Gemini CLI", () => {
+    const script = buildPooledAgentCommand(
+      "gemini",
+      { OPTIO_PROMPT: "hi", OPTIO_GEMINI_AUTH_MODE: "google-login" },
+      opts,
+    ).join("\n");
+    expect(script).toContain('agy -p "$OPTIO_PROMPT" --output-format stream-json');
+    expect(script).not.toContain("gemini -p");
+  });
+
   it("Gemini runs in the run's own home", () => {
     const script = buildPooledAgentCommand("gemini", { OPTIO_PROMPT: "hi" }, opts).join("\n");
     expect(script).toContain('export GEMINI_CLI_HOME="$OPTIO_GEMINI_HOME"');

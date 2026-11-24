@@ -145,6 +145,13 @@ RUN case ",${AGENT_CLIS}," in *,all,*|*,opencode,*) if [ "$OPENCODE_INSTALL_METH
 # Google Gemini CLI
 RUN case ",${AGENT_CLIS}," in *,all,*|*,gemini,*) npm install -g --allow-scripts=@github/keytar,node-pty @google/gemini-cli ;; esac
 
+# Antigravity CLI (agy), Gemini's google-login mode. The agent home is a
+# volume mounted over ~/.local/bin, so it goes to /usr/local/bin. Best-effort
+# like the other script installs.
+RUN case ",${AGENT_CLIS}," in *,all,*|*,gemini,*) (curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin \
+  && /usr/local/bin/agy --version) \
+  || echo "WARN: agy install failed; Gemini google-login mode will not be available in this image" ;; esac
+
 # OpenClaw CLI with an audited, reproducible dependency tree.
 COPY images/openclaw/package.json images/openclaw/package-lock.json /opt/optio/openclaw/
 RUN case ",${AGENT_CLIS}," in *,all,*|*,openclaw,*) npm ci --prefix /opt/optio/openclaw --omit=dev --no-audit --no-fund --strict-allow-scripts \

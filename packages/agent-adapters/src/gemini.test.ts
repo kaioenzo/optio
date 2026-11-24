@@ -39,6 +39,10 @@ describe("GeminiAdapter", () => {
       expect(result.missing).toEqual([]);
     });
 
+    it("does not require GEMINI_API_KEY in google-login mode", () => {
+      expect(adapter.validateSecrets([], "google-login")).toEqual({ valid: true, missing: [] });
+    });
+
     it("requires GEMINI_API_KEY in api-key mode", () => {
       const result = adapter.validateSecrets([], "api-key");
       expect(result.valid).toBe(false);
@@ -169,6 +173,26 @@ describe("GeminiAdapter", () => {
       const settingsFile = config.setupFiles!.find((f) => f.path.includes(".gemini/settings.json"));
       const settings = JSON.parse(settingsFile!.content);
       expect(settings.model.maxSessionTurns).toBe(100);
+    });
+
+    describe("google-login mode", () => {
+      const config = adapter.buildContainerConfig({
+        ...baseInput,
+        geminiAuthMode: "google-login",
+        geminiModel: "gemini-4-neon-high",
+      });
+
+      it("needs no API key", () => {
+        expect(config.requiredSecrets).toEqual([]);
+        expect(config.env.OPTIO_GEMINI_AUTH_MODE).toBe("google-login");
+        expect(config.env.OPTIO_GEMINI_MODEL).toBe("gemini-4-neon-high");
+      });
+
+      it("writes no Gemini CLI settings file", () => {
+        expect(config.setupFiles!.some((f) => f.path.includes(".gemini/settings.json"))).toBe(
+          false,
+        );
+      });
     });
 
     it("includes additional context in fallback prompt", () => {
@@ -333,6 +357,51 @@ describe("GeminiAdapter", () => {
       const result = adapter.parseResult(0, logs);
       expect(result.inputTokens).toBe(6050);
       expect(result.outputTokens).toBe(200);
+    });
+
+    describe("Antigravity stream-json", () => {
+      const init =
+        '{"event":"init","conversation_id":"c1","init":{"cwd":"/workspace","tools":[],"permission_mode":"always-proceed","model":"gemini-4-neon-high"}}';
+      const step =
+        '{"event":"step_update","step_update":{"conversation_id":"c1","step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"Opened","usage":{"input_tokens":900,"output_tokens":90}}}';
+      const result = (fields: string) =>
+        `{"event":"result","result":{"conversation_id":"c1","duration_seconds":12,"num_turns":3,${fields}}}`;
+
+      it("reads model, summary and the result's cumulative usage", () => {
+        const logs = [
+          init,
+          step,
+          "https://gitlab.com/org/repo/-/merge_requests/7",
+          result(
+            '"status":"SUCCESS","response":"Opened the MR","usage":{"input_tokens":11174,"output_tokens":346,"thinking_tokens":239,"cache_read_tokens":6688,"total_tokens":11520}',
+          ),
+        ].join("\n");
+        const parsed = adapter.parseResult(0, logs);
+        expect(parsed.success).toBe(true);
+        expect(parsed.model).toBe("gemini-4-neon-high");
+        expect(parsed.summary).toBe("Opened the MR");
+        expect(parsed.prUrl).toBe("https://gitlab.com/org/repo/-/merge_requests/7");
+        expect(parsed.inputTokens).toBe(11174);
+        expect(parsed.outputTokens).toBe(346);
+      });
+
+      it("fails a run whose result is not SUCCESS, even with exit code 0", () => {
+        const parsed = adapter.parseResult(
+          0,
+          [
+            init,
+            result('"status":"ERROR","response":"","error":"authentication failed or timed out"'),
+          ].join("\n"),
+        );
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toBe("authentication failed or timed out");
+      });
+
+      it("names the status when an unsuccessful result has no error text", () => {
+        const parsed = adapter.parseResult(0, result('"status":"CANCELED","response":""'));
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toBe("Antigravity run ended with status CANCELED");
+      });
     });
 
     it("includes cache tokens from per-model stats in input total", () => {
