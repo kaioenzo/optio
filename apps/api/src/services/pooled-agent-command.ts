@@ -1,6 +1,7 @@
 import { shellQuote } from "@optio/shared";
 import { OPENCODE_AUTO_APPROVE_FLAG, opencodeHeadlessEnabled } from "@optio/agent-adapters";
 import { piCommand } from "../utils/pi-command.js";
+import { agyCommand } from "../utils/agy-command.js";
 import { EXPORT_CODEX_HOME, LINK_CODEX_CHATGPT_LOGIN } from "../utils/codex-config.js";
 import {
   copilotMcpConfigFlag,
@@ -109,6 +110,9 @@ export function buildPooledAgentCommand(
       ];
     }
     case "gemini": {
+      if (env.OPTIO_GEMINI_AUTH_MODE === "google-login") {
+        return [`echo "[optio] Running ${label} (Gemini, Antigravity CLI)..."`, ...agyCommand(env)];
+      }
       const modelFlag = env.OPTIO_GEMINI_MODEL ? ` -m ${q(env.OPTIO_GEMINI_MODEL)}` : "";
       const approvalFlag = env.OPTIO_GEMINI_APPROVAL_MODE
         ? ` --approval-mode ${q(env.OPTIO_GEMINI_APPROVAL_MODE)}`

@@ -96,4 +96,19 @@ describe("pooledProviderSecrets with a picked credential", () => {
     );
     expect(resolve).toHaveBeenCalledWith([]);
   });
+
+  it("lets Gemini's google-login mode run without a Gemini key", async () => {
+    const resolve = vi.fn(async (names: string[]) =>
+      Object.fromEntries(names.map((n) => [n, "v"])),
+    );
+    await pooledProviderSecrets(
+      getAdapter("gemini"),
+      { agentRuntime: "gemini", agentOptions: null },
+      stored({}),
+      resolve,
+      null,
+      "google-login",
+    );
+    expect(resolve).toHaveBeenCalledWith([]);
+  });
 });

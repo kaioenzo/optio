@@ -51,6 +51,10 @@ export async function pooledAgentEnv(
   const credential = picked ? credentialRuntime(agent.agentRuntime, picked) : null;
   const secret = (name: string) =>
     retrieveSecretWithFallback(name, "global", workspaceId, ownerUserId).catch(() => null);
+  const geminiAuthMode =
+    agent.agentRuntime === "gemini" && !providerRuntime
+      ? (credential?.geminiAuthMode ?? (await secret("GEMINI_AUTH_MODE")) ?? undefined)
+      : undefined;
   const resolvedSecrets = providerRuntime
     ? {}
     : await pooledProviderSecrets(
@@ -59,6 +63,7 @@ export async function pooledAgentEnv(
         secret,
         (names) => resolveSecretsForTask(names, "", workspaceId, ownerUserId),
         credential,
+        geminiAuthMode,
       );
   const claudeAuthMode = providerRuntime
     ? "bedrock"
@@ -73,6 +78,7 @@ export async function pooledAgentEnv(
     OPTIO_PROMPT: prompt,
     OPTIO_AGENT_TYPE: agent.agentRuntime,
     OPTIO_AUTH_MODE: claudeAuthMode,
+    ...(geminiAuthMode ? { OPTIO_GEMINI_AUTH_MODE: geminiAuthMode } : {}),
     // `model` is the legacy field.
     ...agentOptionsEnv(agent.agentRuntime, agent.agentOptions, agent.model),
   };
@@ -124,16 +130,18 @@ export async function pooledProviderSecrets(
   secret: (name: string) => Promise<string | null>,
   resolveRequired: (names: string[]) => Promise<Record<string, string>>,
   credential: CredentialRuntime | null = null,
+  geminiAuthMode?: string,
 ): Promise<Record<string, string>> {
   if (agent.agentRuntime === "pi") return piProviderSecrets(secret, credential);
   if (agent.agentRuntime === "opencode") {
     const baseUrl = agent.agentOptions?.opencodeBaseUrl;
     return opencodeProviderSecrets(secret, typeof baseUrl === "string" ? baseUrl : null);
   }
-  // A picked credential supplies its own secret (and, for Codex, an
-  // app-server makes the key unnecessary): don't require what it provides.
+  // A picked credential supplies its own secret (and Codex's app-server or
+  // Gemini's Vertex and google-login modes need no key): don't require what
+  // it provides.
   const missing = adapter
-    .validateSecrets([], credential?.codexAuthMode)
+    .validateSecrets([], credential?.codexAuthMode ?? geminiAuthMode)
     .missing.filter((name) => !(credential && name in credential.env));
   return resolveRequired(missing);
 }

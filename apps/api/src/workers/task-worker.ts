@@ -94,6 +94,7 @@ import {
   connectionShellEnv,
 } from "../services/agent-environment-service.js";
 import { EXPORT_CODEX_HOME, LINK_CODEX_CHATGPT_LOGIN } from "../utils/codex-config.js";
+import { agyCommand } from "../utils/agy-command.js";
 import {
   copilotMcpConfigFlag,
   EXPORT_GEMINI_HOME,
@@ -1718,6 +1719,9 @@ export function buildAgentCommand(
       ];
     }
     case "gemini": {
+      if (env.OPTIO_GEMINI_AUTH_MODE === "google-login") {
+        return [`echo "[optio] Running Gemini (Antigravity CLI)..."`, ...agyCommand(env)];
+      }
       const geminiModelFlag = env.OPTIO_GEMINI_MODEL
         ? ` -m ${shellQuote(env.OPTIO_GEMINI_MODEL)}`
         : "";
