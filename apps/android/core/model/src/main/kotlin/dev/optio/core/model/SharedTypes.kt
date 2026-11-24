@@ -225,6 +225,7 @@ enum class CodexAuthMode(override val raw: String) : RawEnum {
     API_KEY("api-key"),
     APP_SERVER("app-server"),
     BEDROCK("bedrock"),
+    CHATGPT("chatgpt"),
     /** Fallback for raw values this client does not know about yet. */
     UNKNOWN("__unknown__");
 
@@ -244,6 +245,7 @@ enum class CopilotAuthMode(override val raw: String) : RawEnum {
 enum class GeminiAuthMode(override val raw: String) : RawEnum {
     API_KEY("api-key"),
     VERTEX_AI("vertex-ai"),
+    GOOGLE_LOGIN("google-login"),
     /** Fallback for raw values this client does not know about yet. */
     UNKNOWN("__unknown__");
 

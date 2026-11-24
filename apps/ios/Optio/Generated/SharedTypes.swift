@@ -440,10 +440,11 @@ public enum CodexAuthMode: String, Codable, Hashable, Sendable, CaseIterable {
     case apiKey = "api-key"
     case appServer = "app-server"
     case bedrock = "bedrock"
+    case chatgpt = "chatgpt"
     /// Fallback for raw values this client does not know about yet.
     case unknown = "__unknown__"
 
-    public static let allCases: [CodexAuthMode] = [.apiKey, .appServer, .bedrock]
+    public static let allCases: [CodexAuthMode] = [.apiKey, .appServer, .bedrock, .chatgpt]
 
     public init(from decoder: any Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
@@ -467,10 +468,11 @@ public enum CopilotAuthMode: String, Codable, Hashable, Sendable, CaseIterable {
 public enum GeminiAuthMode: String, Codable, Hashable, Sendable, CaseIterable {
     case apiKey = "api-key"
     case vertexAi = "vertex-ai"
+    case googleLogin = "google-login"
     /// Fallback for raw values this client does not know about yet.
     case unknown = "__unknown__"
 
-    public static let allCases: [GeminiAuthMode] = [.apiKey, .vertexAi]
+    public static let allCases: [GeminiAuthMode] = [.apiKey, .vertexAi, .googleLogin]
 
     public init(from decoder: any Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
