@@ -26,7 +26,7 @@ export type {
 } from "./types.js";
 export { ANTHROPIC_CATALOG } from "./anthropic.js";
 export { OPENAI_CATALOG } from "./openai.js";
-export { GEMINI_CATALOG } from "./gemini.js";
+export { GEMINI_CATALOG, GEMINI_ANTIGRAVITY_CATALOG, isAntigravityModel } from "./gemini.js";
 export { COPILOT_CATALOG } from "./copilot.js";
 export { OPENCODE_CATALOG } from "./opencode.js";
 export { OPENCLAW_CATALOG } from "./openclaw.js";

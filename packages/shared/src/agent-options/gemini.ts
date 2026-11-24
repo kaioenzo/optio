@@ -72,3 +72,53 @@ export const GEMINI_CATALOG: ProviderCatalog = {
   ],
   liveRefreshSupported: true,
 };
+
+const EFFORT_LABELS = { low: "Low", medium: "Medium", high: "High", xhigh: "XHigh" };
+type Effort = keyof typeof EFFORT_LABELS;
+
+function antigravityModels(id: string, label: string, family: string, efforts: Effort[]) {
+  return efforts.map((e) => ({
+    id: `${id}-${e}`,
+    label: `${label} (${EFFORT_LABELS[e]})`,
+    family,
+    source: "baseline" as const,
+  }));
+}
+
+const LMH: Effort[] = ["low", "medium", "high"];
+
+/**
+ * The models Antigravity CLI (`agy models`) offers a Google sign-in, for
+ * Gemini's google-login mode. Its ids carry the reasoning effort, and the
+ * Gemini CLI ids above are unknown to it.
+ */
+export const GEMINI_ANTIGRAVITY_CATALOG: ProviderCatalog = {
+  provider: "gemini",
+  label: "Google Gemini (Antigravity)",
+  modelField: "geminiModel",
+  models: [
+    ...antigravityModels("gemini-4-neon", "Gemini 4 Neon", "gemini-4-neon", [...LMH, "xhigh"]),
+    ...antigravityModels("gemini-4-hydrogen", "Gemini 4 Hydrogen", "gemini-4-hydrogen", [
+      ...LMH,
+      "xhigh",
+    ]),
+    ...antigravityModels("gemini-4-carbon", "Gemini 4 Carbon", "gemini-4-carbon", LMH),
+    ...antigravityModels("gemini-4-argon", "Gemini 4 Argon", "gemini-4-argon", LMH),
+    ...antigravityModels("gemini-3.8-flash", "Gemini 3.8 Flash", "gemini-3.8-flash", LMH),
+    ...[
+      ["gemini-pro-orchestrator-neon", "Orchestrator (Neon)"],
+      ["gemini-pro-orchestrator", "Orchestrator (Carbon)"],
+      ["gemini-pro-orchestrator-argon", "Orchestrator (Argon)"],
+    ].map(([id, label]) => ({ id, label, family: "orchestrator", source: "baseline" as const })),
+    ...antigravityModels("claude-opus-5-5", "Claude Opus 5.5", "claude-opus", LMH),
+    ...antigravityModels("claude-sonnet-5-5", "Claude Sonnet 5.5", "claude-sonnet", LMH),
+    ...antigravityModels("gpt-oss-120b", "GPT-OSS 120B", "gpt-oss", ["medium"]),
+  ],
+  aliases: {},
+  options: [],
+  liveRefreshSupported: false,
+};
+
+export function isAntigravityModel(id: string): boolean {
+  return GEMINI_ANTIGRAVITY_CATALOG.models.some((m) => m.id === id);
+}
