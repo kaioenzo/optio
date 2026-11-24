@@ -11,6 +11,9 @@ import type { AgentLogEntry } from "@optio/shared";
  * - { type: "error", message: "..." }
  * - { type: "result", stats: { per-model input_tokens / output_tokens }, turn_count: N }
  *
+ * In google-login mode the run is Antigravity CLI (`agy`), whose events carry
+ * an `event` key instead of `type` (see parseAntigravityEvent).
+ *
  * Returns multiple entries per line when a message contains structured content.
  */
 export function parseGeminiEvent(
@@ -31,6 +34,7 @@ export function parseGeminiEvent(
   }
 
   const timestamp = new Date().toISOString();
+  if (typeof event?.event === "string") return parseAntigravityEvent(event, taskId, timestamp);
   const entries: AgentLogEntry[] = [];
 
   // Extract session ID from init event
@@ -186,6 +190,91 @@ export function parseGeminiEvent(
   }
 
   // Unknown JSON event — skip
+  return { entries: [], sessionId };
+}
+
+/**
+ * Antigravity CLI (`agy --output-format stream-json`) events:
+ * - { event: "init", conversation_id, init: { cwd, tools, permission_mode, model? } }
+ * - { event: "step_update", step_update: { conversation_id, step_type, state, text_delta?, tool_info?, usage? } }
+ * - { event: "result", result: { conversation_id, status, response, error?, num_turns, usage } }
+ *
+ * The conversation id is the session id: without it the task worker reads the
+ * run as one that never started.
+ */
+function parseAntigravityEvent(
+  event: any,
+  taskId: string,
+  timestamp: string,
+): { entries: AgentLogEntry[]; sessionId?: string } {
+  const body = event[event.event] ?? {};
+  const sessionId = (event.conversation_id ?? body.conversation_id) as string | undefined;
+  const entry = (
+    type: AgentLogEntry["type"],
+    content: string,
+    metadata?: AgentLogEntry["metadata"],
+  ) =>
+    ({
+      taskId,
+      timestamp,
+      sessionId,
+      type,
+      content,
+      ...(metadata && { metadata }),
+    }) as AgentLogEntry;
+
+  if (event.event === "init") {
+    const model = typeof body.model === "string" ? body.model : undefined;
+    const content = model ? `Session initialized · model: ${model}` : "Session initialized";
+    return { entries: [entry("system", content, model ? { model } : undefined)], sessionId };
+  }
+
+  if (event.event === "step_update") {
+    const entries: AgentLogEntry[] = [];
+    if (typeof body.text_delta === "string" && body.text_delta.trim()) {
+      entries.push(entry("text", body.text_delta));
+    }
+    if (body.tool_info) {
+      const info = body.tool_info;
+      const name = info.name ?? info.tool_name ?? body.step_type ?? "tool";
+      const args = parseArgs(info.arguments ?? info.args ?? info.input);
+      const raw = JSON.stringify(info);
+      entries.push(
+        entry("tool_use", args ? formatGeminiToolUse(name, args) : raw.slice(0, 300), {
+          toolName: name,
+          toolInput: args,
+        }),
+      );
+    }
+    return { entries, sessionId };
+  }
+
+  if (event.event === "result") {
+    const entries: AgentLogEntry[] = [];
+    if (body.status && body.status !== "SUCCESS") {
+      entries.push(
+        entry("error", body.error || `Antigravity run ended with status ${body.status}`),
+      );
+    }
+    const input = body.usage?.input_tokens;
+    const output = body.usage?.output_tokens;
+    const meta = [
+      typeof input === "number" && `${input} input tokens`,
+      typeof output === "number" && `${output} output tokens`,
+      body.num_turns && `${body.num_turns} turns`,
+    ].filter(Boolean);
+    if (meta.length) {
+      entries.push(
+        entry("info", `Result: ${meta.join(" · ")}`, {
+          inputTokens: input,
+          outputTokens: output,
+          turnCount: body.num_turns,
+        }),
+      );
+    }
+    return { entries, sessionId };
+  }
+
   return { entries: [], sessionId };
 }
 
