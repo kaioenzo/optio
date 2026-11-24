@@ -5,7 +5,7 @@ import { shellQuote } from "@optio/shared";
  * keyring. It is made once by running `agy` in the pod's terminal and lives
  * on the persistent home, so every run reuses it and its refreshes.
  */
-export const AGY_TOKEN_FILE = "$HOME/.gemini/antigravity-cli/antigravity-oauth-token";
+const AGY_TOKEN_FILE = "$HOME/.gemini/antigravity-cli/antigravity-oauth-token";
 
 /** Gemini's google-login mode: Antigravity CLI on the pod's Google sign-in. */
 export function agyCommand(env: Record<string, string>): string[] {

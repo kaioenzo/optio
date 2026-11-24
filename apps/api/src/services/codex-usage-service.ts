@@ -11,7 +11,7 @@ const SEVEN_DAYS_MINS = 10080;
  * (`account/rateLimits/read`), which asks the account backend and runs no model.
  * Passed to `node -e`; prints one JSON line.
  */
-export const CODEX_USAGE_PROBE = `
+const CODEX_USAGE_PROBE = `
 const { spawn } = require("node:child_process");
 const p = spawn("codex", ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
 const done = (out) => { console.log(JSON.stringify(out)); p.kill(); process.exit(0); };

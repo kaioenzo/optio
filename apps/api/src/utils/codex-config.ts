@@ -28,7 +28,7 @@ export const EXPORT_CODEX_HOME: readonly string[] = [
  * `CODEX_HOME=$HOME/.codex-chatgpt codex login --device-auth`. Every run's own
  * `CODEX_HOME` links its `auth.json` there, so token refreshes land in one file.
  */
-export const CODEX_CHATGPT_HOME = "$HOME/.codex-chatgpt";
+const CODEX_CHATGPT_HOME = "$HOME/.codex-chatgpt";
 
 /** Script lines that, in `chatgpt` auth mode, point the run at the pod's ChatGPT sign-in. */
 export const LINK_CODEX_CHATGPT_LOGIN: readonly string[] = [
