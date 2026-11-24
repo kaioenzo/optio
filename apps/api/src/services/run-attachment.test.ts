@@ -73,6 +73,7 @@ import {
   onStreamError,
   holdsRun,
   isRemovableRunDir,
+  isRemovableWorkDir,
   readReviewDraft,
   removeRunDirectory,
   runAttachJob,
@@ -720,6 +721,23 @@ describe("run directories", () => {
     }
   });
 
+  it("removes only /workspace/runs/<one plain segment> as a working directory", () => {
+    expect(isRemovableWorkDir("/workspace/runs/0f2e1c1a-1111-4222-8333-444444444444")).toBe(true);
+    for (const bad of [
+      "/workspace/runs",
+      "/workspace/runs/",
+      "/workspace/runs/..",
+      "/workspace/runs/.hidden",
+      "/workspace/runs/a/b",
+      "/workspace/runs/$(id)",
+      "/workspace/tasks/a",
+      "/workspace",
+      "/home/agent/optio/runs/a",
+    ]) {
+      expect(isRemovableWorkDir(bad), bad).toBe(false);
+    }
+  });
+
   function execRuntime(stdout: string) {
     const scripts: string[] = [];
     const runtime = {
@@ -746,6 +764,32 @@ describe("run directories", () => {
     expect(scripts[0]).toContain("rm -rf '/home/agent/optio/runs/run-1'");
     expect(scripts[0].indexOf("tail -c")).toBeLessThan(scripts[0].indexOf("rm -rf"));
     expect(mockLog.warn).toHaveBeenCalledWith({ stderrTail: "Error: boom" }, "Agent stderr output");
+  });
+
+  it("removes the working directory of a Job run in the same exec", async () => {
+    const { runtime, scripts } = execRuntime("");
+    await removeRunDirectory(
+      runtime,
+      { id: "pod", name: "pod" },
+      "/home/agent/optio/runs/run-1",
+      mockLog as never,
+      "/workspace/runs/run-1",
+    );
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0]).toContain("rm -rf '/home/agent/optio/runs/run-1' '/workspace/runs/run-1'");
+  });
+
+  it("leaves out a working directory that is not under /workspace/runs", async () => {
+    const { runtime, scripts } = execRuntime("");
+    await removeRunDirectory(
+      runtime,
+      { id: "pod", name: "pod" },
+      "/home/agent/optio/runs/run-1",
+      mockLog as never,
+      "/workspace/tasks/run-1",
+    );
+    expect(scripts[0]).toContain("rm -rf '/home/agent/optio/runs/run-1'");
+    expect(scripts[0]).not.toContain("/workspace/tasks");
   });
 
   it("refuses anything but a run directory, without an exec", async () => {

@@ -70,7 +70,7 @@ import {
 } from "./run-log-service.js";
 import * as podPool from "./agent-pod-pool.js";
 import { getRuntime } from "./container-service.js";
-import { RUN_HOMES_DIR, runHome } from "../utils/harness-config.js";
+import { RUN_HOMES_DIR, RUN_WORK_DIRS, runHome } from "../utils/harness-config.js";
 import { logger } from "../logger.js";
 
 export { AttachmentLostError };
@@ -1070,16 +1070,22 @@ export function endOfLoss(loss: HoldLoss): "detached" | "reset" {
 /** How much of an agent's stderr is kept: its last 8 KB. */
 const STDERR_TAIL_BYTES = 8192;
 
-/**
- * Whether `runDir` is a run directory this module may remove: exactly
- * `/home/agent/optio/runs/<one segment>`, the segment a plain name (no
- * `.` or `..`, no slash, nothing a shell would read twice).
- */
-export function isRemovableRunDir(runDir: string): boolean {
-  const prefix = `${RUN_HOMES_DIR}/`;
-  if (!runDir.startsWith(prefix)) return false;
-  const segment = runDir.slice(prefix.length);
+/** Whether `dir` is exactly `<root>/<one plain segment>`: no `.` or `..`, no slash, nothing a shell would read twice. */
+function isPlainChildOf(root: string, dir: string): boolean {
+  const prefix = `${root}/`;
+  if (!dir.startsWith(prefix)) return false;
+  const segment = dir.slice(prefix.length);
   return /^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/.test(segment) && segment !== "." && segment !== "..";
+}
+
+/** Whether `runDir` is a run directory this module may remove: `/home/agent/optio/runs/<one segment>`. */
+export function isRemovableRunDir(runDir: string): boolean {
+  return isPlainChildOf(RUN_HOMES_DIR, runDir);
+}
+
+/** Whether `workDir` is a Job run's working directory this module may remove: `/workspace/runs/<one segment>`. */
+export function isRemovableWorkDir(workDir: string): boolean {
+  return isPlainChildOf(RUN_WORK_DIRS, workDir);
 }
 
 /** Runs a short script in the pod and returns its stdout (best-effort: "" on failure). */
@@ -1162,18 +1168,23 @@ export function withStderr(message: string, stderrTail: string): string {
  * Removes the run's directory in its pod once the run is terminal and every
  * byte of its output is a log row (the run-home sweep is the backstop), in
  * one short exec that first reads the tail of the agent's stderr: logged as
- * a warning when there is any, and returned. Best-effort.
+ * a warning when there is any, and returned. A Job run's `workDir` goes in
+ * the same exec. Best-effort.
  */
 export async function removeRunDirectory(
   runtime: ContainerRuntime,
   handle: ContainerHandle,
   runDir: string,
   log: typeof logger = logger,
+  workDir?: string,
 ): Promise<string> {
   if (!isRemovableRunDir(runDir)) return "";
+  const removals = [runDir, ...(workDir && isRemovableWorkDir(workDir) ? [workDir] : [])]
+    .map(shellQuote)
+    .join(" ");
   try {
     const tail = (
-      await podScript(runtime, handle, `${stderrTailScript(runDir)}; rm -rf ${shellQuote(runDir)}`)
+      await podScript(runtime, handle, `${stderrTailScript(runDir)}; rm -rf ${removals}`)
     ).trim();
     if (tail) log.warn({ stderrTail: tail }, "Agent stderr output");
     return tail;

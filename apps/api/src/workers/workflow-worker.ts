@@ -49,7 +49,7 @@ import {
   type StreamRunResult,
 } from "../services/run-attachment.js";
 import { RunOutputDigest } from "../services/run-output-digest.js";
-import { runHome } from "../utils/harness-config.js";
+import { runHome, runWorkDir } from "../utils/harness-config.js";
 import { addUsage } from "../services/run-usage.js";
 import { activityFlusher } from "../services/activity-flush.js";
 import { WORKFLOW_CLAIM_KEY, withClaimLock } from "../services/claim-lock.js";
@@ -741,8 +741,9 @@ async function finishWorkflowRun(input: FinishWorkflowRunInput): Promise<RunEnd>
   else log.warn({ error: effectiveError }, "Workflow run failed");
 
   // The run is over and every byte of its output is a log row: its
-  // directory in the pod (output, stdin, the runtime's config) goes.
-  await removeRunDirectory(runtime, pod.handle, runDir, log);
+  // directory in the pod (output, stdin, the runtime's config) goes, and
+  // so does the working directory the run set up.
+  await removeRunDirectory(runtime, pod.handle, runDir, log, runWorkDir(workflowRunId));
   await closeAttachment(hold);
   return "finished";
 }

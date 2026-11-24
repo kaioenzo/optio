@@ -72,6 +72,8 @@ export const AGENT_HOME_DIR =
   process.env.OPTIO_AGENT_HOME_DIR?.replace(/\/+$/, "") || "/home/agent";
 /** Where run homes live in the pod. */
 export const RUN_HOMES_DIR = `${AGENT_HOME_DIR}/optio/runs`;
+/** Where a Job run's working directory lives in a workflow pod. */
+export const RUN_WORK_DIRS = "/workspace/runs";
 /** The setup-file prefix that lands in `RUN_HOMES_DIR` (`WRITE_SETUP_FILES`). */
 const RUN_HOMES_SETUP_DIR = "/opt/optio/runs";
 
@@ -85,6 +87,10 @@ const SAFE_RUN_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 export function runHome(runId?: string | null): { setupDir: string; podDir: string } {
   const id = runId && SAFE_RUN_ID.test(runId) ? runId : randomBytes(6).toString("hex");
   return { setupDir: `${RUN_HOMES_SETUP_DIR}/${id}`, podDir: `${RUN_HOMES_DIR}/${id}` };
+}
+
+export function runWorkDir(runId: string): string {
+  return `${RUN_WORK_DIRS}/${runId}`;
 }
 
 /** The pod path of a run's home, for the cleanup that follows its worktree. */

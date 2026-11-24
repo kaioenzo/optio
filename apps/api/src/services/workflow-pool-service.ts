@@ -18,7 +18,7 @@ import { resolveImage } from "./repo-pool-service.js";
 import { getWorkloadManager, isStatefulSetEnabled } from "./k8s-workload-service.js";
 import * as podPool from "./agent-pod-pool.js";
 import { buildPooledStartScript, KEEP_POD_ALIVE, WARM_OPENCODE_MODELS } from "../utils/pod-env.js";
-import { runHome } from "../utils/harness-config.js";
+import { RUN_WORK_DIRS, runHome, runWorkDir } from "../utils/harness-config.js";
 import type { RunStartResult } from "@optio/container-runtime";
 import { updatedAtMatches } from "../utils/pg-timestamp.js";
 
@@ -60,7 +60,7 @@ export async function getOrCreateWorkflowPod(
 function buildInitScript(): string {
   return [
     "set -e",
-    "mkdir -p /workspace/runs",
+    `mkdir -p ${RUN_WORK_DIRS}`,
     WARM_OPENCODE_MODELS,
     "touch /workspace/.ready",
     "echo '[optio] Workflow pod ready'",
@@ -196,7 +196,7 @@ export async function startRunInPod(
   const script = buildPooledStartScript({
     env: { ...env, OPTIO_WORKFLOW_RUN_ID: runId },
     runId,
-    workDir: `/workspace/runs/${runId}`,
+    workDir: runWorkDir(runId),
     agentCommand,
     label: "workflow pod",
   });

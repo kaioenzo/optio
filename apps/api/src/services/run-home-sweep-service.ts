@@ -1,7 +1,8 @@
 /**
  * The run-home sweep (docs/plans/scale-out.md §1, "Where things live"): the
- * backstop that removes `/home/agent/optio/runs/<run id>` directories of
- * finished runs from every ready pod. The attached worker removes a run's
+ * backstop that removes `/home/agent/optio/runs/<run id>` directories (and a
+ * Job run's `/workspace/runs/<run id>` working directory) of finished runs
+ * from every ready pod. The attached worker removes a run's
  * directory itself once the run is terminal and its output consumed; this
  * sweep catches what a worker that died never got to, and the directories
  * of runs that never used the protocol (the exec path, which has nothing to
@@ -20,7 +21,7 @@ import {
 } from "../db/schema.js";
 import { getRuntime } from "./container-service.js";
 import { podHandle } from "./agent-pod-pool.js";
-import { RUN_HOMES_DIR } from "../utils/harness-config.js";
+import { RUN_HOMES_DIR, runWorkDir } from "../utils/harness-config.js";
 import { logger } from "../logger.js";
 
 const SAFE_RUN_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -191,7 +192,10 @@ export async function sweepFinishedRunHomes(): Promise<number> {
     });
     if (gone.length === 0) continue;
     const script = gone
-      .map((e) => `rm -rf ${shellQuote(`${RUN_HOMES_DIR}/${e.runId}`)}`)
+      .map(
+        (e) =>
+          `rm -rf ${shellQuote(`${RUN_HOMES_DIR}/${e.runId}`)} ${shellQuote(runWorkDir(e.runId))}`,
+      )
       .join("\n");
     try {
       const session = await rt.exec(handle, ["bash", "-c", script], { tty: false });
