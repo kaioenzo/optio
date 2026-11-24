@@ -188,4 +188,105 @@ describe("parseGeminiEvent", () => {
     const result = parseGeminiEvent(line, TASK_ID);
     expect(result.sessionId).toBe("session-xyz");
   });
+  describe("Antigravity CLI (agy) events", () => {
+    const agy = (event: string, body: Record<string, unknown>) =>
+      JSON.stringify({ event, [event]: { conversation_id: "conv-1", ...body } });
+
+    it("takes the session id from the init conversation id", () => {
+      const line = JSON.stringify({
+        event: "init",
+        conversation_id: "conv-1",
+        init: {
+          cwd: "/workspace",
+          tools: [],
+          permission_mode: "always-proceed",
+          model: "gemini-3.8-flash-medium",
+        },
+      });
+      const result = parseGeminiEvent(line, TASK_ID);
+      expect(result.sessionId).toBe("conv-1");
+      expect(result.entries).toHaveLength(1);
+      expect(result.entries[0].type).toBe("system");
+      expect(result.entries[0].metadata?.model).toBe("gemini-3.8-flash-medium");
+    });
+
+    it("logs a step's text delta with the session id", () => {
+      const result = parseGeminiEvent(
+        agy("step_update", {
+          step_index: 1,
+          state: "DONE",
+          step_type: "agent_response",
+          text_delta: "O E-APA é uma plataforma.",
+        }),
+        TASK_ID,
+      );
+      expect(result.sessionId).toBe("conv-1");
+      expect(result.entries.map((e) => [e.type, e.content])).toEqual([
+        ["text", "O E-APA é uma plataforma."],
+      ]);
+    });
+
+    it("logs a tool step by name and arguments when present", () => {
+      const result = parseGeminiEvent(
+        agy("step_update", {
+          step_type: "tool_call",
+          state: "DONE",
+          tool_info: { name: "read_file", arguments: { path: "README.md" } },
+        }),
+        TASK_ID,
+      );
+      expect(result.entries).toHaveLength(1);
+      expect(result.entries[0].type).toBe("tool_use");
+      expect(result.entries[0].content).toBe("Read README.md");
+      expect(result.entries[0].metadata?.toolName).toBe("read_file");
+    });
+
+    it("keeps an unknown tool payload visible instead of dropping it", () => {
+      const result = parseGeminiEvent(
+        agy("step_update", {
+          step_type: "tool_call",
+          tool_info: { kind: "view", target: "README.md" },
+        }),
+        TASK_ID,
+      );
+      expect(result.entries[0].type).toBe("tool_use");
+      expect(result.entries[0].content).toContain("README.md");
+    });
+
+    it("skips empty step updates but still reports the session", () => {
+      const result = parseGeminiEvent(
+        agy("step_update", { step_type: "planning", state: "RUNNING", text_delta: "  " }),
+        TASK_ID,
+      );
+      expect(result.entries).toEqual([]);
+      expect(result.sessionId).toBe("conv-1");
+    });
+
+    it("summarizes a successful result's cumulative usage", () => {
+      const result = parseGeminiEvent(
+        agy("result", {
+          status: "SUCCESS",
+          response: "ok",
+          num_turns: 3,
+          usage: { input_tokens: 25528, output_tokens: 1830 },
+        }),
+        TASK_ID,
+      );
+      expect(result.entries.map((e) => e.type)).toEqual(["info"]);
+      expect(result.entries[0].content).toBe(
+        "Result: 25528 input tokens · 1830 output tokens · 3 turns",
+      );
+      expect(result.entries[0].metadata?.inputTokens).toBe(25528);
+    });
+
+    it("logs a failed result's error", () => {
+      const result = parseGeminiEvent(
+        agy("result", { status: "ERROR", error: "authentication failed or timed out" }),
+        TASK_ID,
+      );
+      expect(result.entries.map((e) => [e.type, e.content])).toEqual([
+        ["error", "authentication failed or timed out"],
+      ]);
+    });
+  });
 });
