@@ -110,8 +110,11 @@ describe("buildPooledAgentCommand", () => {
     expect(lines.at(-1)).toBe(
       `codex exec --dangerously-bypass-approvals-and-sandbox -m 'gpt-5.6-sol' -c 'model_reasoning_effort="high"' "$OPTIO_PROMPT" --json </dev/null`,
     );
-    // The run's own CODEX_HOME (its MCP servers) is exported just before Codex starts.
-    expect(lines.at(-2)).toContain('export CODEX_HOME="$OPTIO_CODEX_HOME"');
+    // The run's own CODEX_HOME (its MCP servers) is exported before the ChatGPT login is linked into it.
+    const exportHome = lines.findIndex((l) => l.includes('export CODEX_HOME="$OPTIO_CODEX_HOME"'));
+    const linkLogin = lines.findIndex((l) => l.includes("ln -sf"));
+    expect(exportHome).toBeGreaterThanOrEqual(0);
+    expect(linkLogin).toBeGreaterThan(exportHome);
     // Nothing set: Codex's own defaults, as before.
     expect(buildPooledAgentCommand("codex", {}, opts).at(-1)).toBe(
       `codex exec --dangerously-bypass-approvals-and-sandbox "$OPTIO_PROMPT" --json </dev/null`,
