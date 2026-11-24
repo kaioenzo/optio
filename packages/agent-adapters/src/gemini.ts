@@ -222,7 +222,8 @@ export class GeminiAdapter implements AgentAdapter {
       }
 
       // Antigravity's result carries the run's cumulative usage; per-step
-      // usage would count the same tokens twice.
+      // usage would count the same tokens twice. Its input_tokens already
+      // include cache_read_tokens (total_tokens = input + output).
       if (event.event === "result" && event.result) {
         const r = event.result;
         if (r.status && r.status !== "SUCCESS") {
@@ -233,7 +234,6 @@ export class GeminiAdapter implements AgentAdapter {
         const u = r.usage;
         if (u) {
           if (typeof u.input_tokens === "number") totalInputTokens += u.input_tokens;
-          if (typeof u.cache_read_tokens === "number") totalInputTokens += u.cache_read_tokens;
           if (typeof u.output_tokens === "number") totalOutputTokens += u.output_tokens;
         }
         return;

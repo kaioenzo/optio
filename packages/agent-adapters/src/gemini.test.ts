@@ -373,7 +373,7 @@ describe("GeminiAdapter", () => {
           step,
           "https://gitlab.com/org/repo/-/merge_requests/7",
           result(
-            '"status":"SUCCESS","response":"Opened the MR","usage":{"input_tokens":1000,"output_tokens":100,"thinking_tokens":40,"cache_read_tokens":500,"total_tokens":1640}',
+            '"status":"SUCCESS","response":"Opened the MR","usage":{"input_tokens":11174,"output_tokens":346,"thinking_tokens":239,"cache_read_tokens":6688,"total_tokens":11520}',
           ),
         ].join("\n");
         const parsed = adapter.parseResult(0, logs);
@@ -381,8 +381,8 @@ describe("GeminiAdapter", () => {
         expect(parsed.model).toBe("gemini-4-neon-high");
         expect(parsed.summary).toBe("Opened the MR");
         expect(parsed.prUrl).toBe("https://gitlab.com/org/repo/-/merge_requests/7");
-        expect(parsed.inputTokens).toBe(1500);
-        expect(parsed.outputTokens).toBe(100);
+        expect(parsed.inputTokens).toBe(11174);
+        expect(parsed.outputTokens).toBe(346);
       });
 
       it("fails a run whose result is not SUCCESS, even with exit code 0", () => {
